@@ -99,7 +99,7 @@ done
 # literal that also appears above it. SERVER_FLAGS is a bash array (not a string) so it can be checked
 # element-by-element (doctor's flag-drift check) and hashed as a whole (config_sig).
 # ============================================================================================================
-KIT_VERSION="2026.09.14"
+KIT_VERSION="2026.09.15"
 KIT_DIR="$HOME/.gemma4-coding-kit"
 MODEL_DIR="$KIT_DIR/models"
 PORT=8114
@@ -198,6 +198,23 @@ discovery in this session's own testing.
 Measured directly: with thinking enabled, this model produced 46,615 characters of internal reasoning and a
 completely empty final answer, even given 24k tokens of context and a 16k-token output ceiling. This kit
 disables it (`reasoning: false`) for that reason -- don't turn it back on for coding tasks.
+
+## Always end with an edit, not just a diagnosis
+
+A real-repo probe (research repo EXP-077: 3 non-interactive runs against a real, historically-sourced bug, no
+files pre-selected) found this model's dominant failure mode isn't wrong reasoning -- in 2 of 3 runs it
+correctly localized the exact file and root cause via its own tool use, then the turn ended with no edit ever
+applied: one run added a test but never touched the buggy file; another wrote a debug script that correctly
+diagnosed the bug, then ran out of turns before editing anything. Synthetic single-file benchmarks (this kit's
+own included) don't surface this, because they never require more than a couple of tool calls chained
+together -- see AgentFloor's 96%/72% single-call/two-step-chain numbers above.
+
+If you've identified which file and what's wrong, the next action is editing that file -- not another read,
+not another test script, not a summary of what you found. Write the corrected file in the same turn you
+finish diagnosing. Only stop without an edit if you genuinely need more information to know what to change.
+
+*(This section is this session's own finding, not yet suite-measured the way the sections above are --
+EXP-079, if it runs, is what would confirm whether this instruction actually changes the real-repo fix rate.)*
 EOF
 )
 
