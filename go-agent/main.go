@@ -48,25 +48,29 @@ func cli(parent context.Context, argv []string, stdout, stderr io.Writer) int {
 	output := flags.String("output", "", "artifact parent directory outside the worktree; default: sibling .<worktree>-gemma-runs")
 	testCommand := flags.String("test-command", "", `fixed test argv as JSON, e.g. '["node","test.mjs"]'; no shell parsing`)
 	timeout := flags.Duration("timeout", 120*time.Second, "total deadline, including requests, tools, and final verification")
-	// Everything below is a fixed default tuned for Qwen3-30B-A3B (the model this harness
-	// targets) rather than a CLI flag: rich edit feedback, the ledger's repeat-action
-	// refusal, read deduplication, 16 turns, a 30s test-command deadline, and a 64 KiB
-	// history ceiling. Live testing showed each of these measurably helps or was never
-	// once adjusted in practice; --timeout, --max-tokens, and --model are the knobs that
-	// actually vary run to run.
+	// Everything below is a fixed default tuned for Qwen3.6-35B-A3B (the model this
+	// harness targets, superseding Qwen3-30B-A3B after live comparison: same MoE speed
+	// class, but the only model this session to actually pass the dayjs-guided oracle
+	// test, twice, independently) rather than a CLI flag: rich edit feedback, the
+	// ledger's repeat-action refusal, read deduplication, 16 turns, a 30s test-command
+	// deadline, and a 64 KiB history ceiling. Live testing showed each of these
+	// measurably helps or was never once adjusted in practice; --timeout, --max-tokens,
+	// and --model are the knobs that actually vary run to run.
 	//
-	// Sampling is Qwen's own documented recommendation for this model in instruct/coding
-	// use (temperature 0.7, top_p 0.8, top_k 20, presence_penalty 1.0, repetition_penalty
-	// 1.05), not greedy decoding: the model card explicitly warns greedy decoding can
-	// cause the exact "endless repetition" failure this harness spent real effort
-	// building structural workarounds for (the ledger, read-dedup, and the per-turn tool
-	// ban). A fixed seed keeps runs reproducible for the regression suite despite
-	// non-zero temperature.
+	// Sampling is Qwen3.6-35B-A3B's own documented instruct/non-thinking-mode
+	// recommendation (temperature 0.7, top_p 0.8, top_k 20, presence_penalty 1.5,
+	// repetition_penalty 1.0), not greedy decoding: the model card explicitly warns
+	// greedy decoding can cause the exact "endless repetition" failure this harness
+	// spent real effort building structural workarounds for (the ledger, read-dedup,
+	// and the per-turn tool ban). This model thinks by default (unlike Qwen3-30B-A3B);
+	// --reasoning off on the server suppresses it, verified live to produce no leaked
+	// <think> content. A fixed seed keeps runs reproducible for the regression suite
+	// despite non-zero temperature.
 	temperature := 0.7
 	topP := 0.8
 	topK := 20
-	presencePenalty := 1.0
-	repeatPenalty := 1.05
+	presencePenalty := 1.5
+	repeatPenalty := 1.0
 	seed := 42
 	config := Config{
 		ReadFormat:       "text",
@@ -86,7 +90,7 @@ func cli(parent context.Context, argv []string, stdout, stderr io.Writer) int {
 	}
 	toolTimeout := 30 * time.Second
 	tui := flags.Bool("tui", false, "launch the interactive terminal UI instead of one-shot JSON output; silently falls back to headless when stdout is not a terminal")
-	flags.StringVar(&config.Model, "model", "qwen30b-a3b", "server model ID")
+	flags.StringVar(&config.Model, "model", "qwen36-35b-a3b", "server model ID")
 	flags.IntVar(&config.MaxTokens, "max-tokens", 8192, "maximum completion tokens per request")
 	fail := func(err error) int { fmt.Fprintln(stderr, err); return 2 }
 	if err := flags.Parse(argv); err != nil {

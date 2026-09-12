@@ -29,11 +29,11 @@ func TestSamplingDefaults(t *testing.T) {
 		if request.TopK == nil || *request.TopK != 20 {
 			t.Errorf("top_k %v, want 20", request.TopK)
 		}
-		if request.PresencePenalty == nil || *request.PresencePenalty != 1.0 {
-			t.Errorf("presence_penalty %v, want 1.0", request.PresencePenalty)
+		if request.PresencePenalty == nil || *request.PresencePenalty != 1.5 {
+			t.Errorf("presence_penalty %v, want 1.5", request.PresencePenalty)
 		}
-		if request.RepeatPenalty == nil || *request.RepeatPenalty != 1.05 {
-			t.Errorf("repeat_penalty %v, want 1.05", request.RepeatPenalty)
+		if request.RepeatPenalty == nil || *request.RepeatPenalty != 1.0 {
+			t.Errorf("repeat_penalty %v, want 1.0", request.RepeatPenalty)
 		}
 		if request.Seed == nil || *request.Seed != 42 {
 			t.Errorf("seed %v, want a fixed default for reproducibility", request.Seed)
