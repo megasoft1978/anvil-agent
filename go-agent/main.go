@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -49,27 +48,24 @@ func cli(parent context.Context, argv []string, stdout, stderr io.Writer) int {
 	output := flags.String("output", "", "artifact parent directory outside the worktree; default: sibling .<worktree>-gemma-runs")
 	testCommand := flags.String("test-command", "", `fixed test argv as JSON, e.g. '["node","test.mjs"]'; no shell parsing`)
 	timeout := flags.Duration("timeout", 120*time.Second, "total deadline, including requests, tools, and final verification")
-	toolTimeout := flags.Duration("tool-timeout", 30*time.Second, "per-test-command deadline, bounded by the total deadline")
-	config := Config{}
-	flags.StringVar(&config.SamplingProfile, "sampling-profile", "baseline", "sampling defaults: baseline (temperature 0) or gemma (1.0, top_p .95, top_k 64, min_p 0)")
-	seed := flags.Int("seed", -1, "optional non-negative server sampling seed; -1 uses server default")
-	flags.StringVar(&config.PromptProfile, "prompt-profile", "baseline", "initial prompt: baseline, focused, or test-first (experimental)")
-	flags.StringVar(&config.ReadFormat, "read-format", "text", "file-read response format: text, json, or xml")
-	flags.BoolVar(&config.DedupReads, "dedup-reads", false, "experimental: reference earlier unchanged read pages instead of repeating their content")
-	flags.BoolVar(&config.EnableSearch, "enable-search", false, "experimental: enable literal search within a source file")
-	flags.BoolVar(&config.TaskReminder, "task-reminder", false, "experimental: restate the original task after successful reads")
-	flags.BoolVar(&config.EditOnly, "edit-only", false, "diagnostic: only edit/test tools; caller must supply complete source in the task")
-	flags.BoolVar(&config.RichEditFeedback, "rich-edit-feedback", false, "experimental: return current source context and a reason on every edit outcome instead of a bare error, and on success")
-	flags.BoolVar(&config.AutoTestAfterEdit, "auto-test-after-edit", false, "experimental: run the configured test command immediately after a successful edit instead of waiting for the model to call run_tests")
-	flags.BoolVar(&config.DetectRepeatedEdits, "detect-repeated-edits", false, "experimental: tell the model when it repeats an exact edit (same path/oldText/newText) it already applied and later reverted or replaced in this run")
+	// Everything below is a fixed default tuned for Qwen3-30B-A3B (the model this harness
+	// targets) rather than a CLI flag: rich edit feedback, the ledger's repeat-action
+	// refusal, greedy sampling, 16 turns, a 30s test-command deadline, and a 64 KiB
+	// history ceiling. Live testing showed each of these measurably helps or was never
+	// once adjusted in practice; --timeout, --max-tokens, and --model are the knobs that
+	// actually vary run to run.
+	config := Config{
+		ReadFormat:       "text",
+		PromptProfile:    "baseline",
+		RichEditFeedback: true,
+		Ledger:           true,
+		MaxTurns:         16,
+		MaxHistoryBytes:  64 << 10,
+	}
+	toolTimeout := 30 * time.Second
 	tui := flags.Bool("tui", false, "launch the interactive terminal UI instead of one-shot JSON output; silently falls back to headless when stdout is not a terminal")
-	flags.BoolVar(&config.PreserveToolReasoning, "preserve-tool-reasoning", false, "preserve native tool-turn reasoning in history; excludes leaked tool markup")
-	flags.StringVar(&config.Model, "model", "gemma4", "server model ID")
-	flags.IntVar(&config.MaxTokens, "max-tokens", 3072, "maximum completion tokens per request")
-	flags.IntVar(&config.MaxTurns, "max-turns", 16, "maximum model requests")
-	flags.Float64Var(&config.Temperature, "temperature", 0, "sampling temperature")
-	flags.IntVar(&config.MaxHistoryBytes, "max-history-bytes", 64<<10, "request byte limit (not a tokenizer); stops without truncating history")
-	flags.BoolVar(&config.RecoverGemma, "recover-gemma", true, "recover complete Gemma tool spans; disable for native-only comparisons")
+	flags.StringVar(&config.Model, "model", "qwen30b-a3b", "server model ID")
+	flags.IntVar(&config.MaxTokens, "max-tokens", 8192, "maximum completion tokens per request")
 	fail := func(err error) int { fmt.Fprintln(stderr, err); return 2 }
 	if err := flags.Parse(argv); err != nil {
 		if err == flag.ErrHelp {
@@ -80,36 +76,8 @@ func cli(parent context.Context, argv []string, stdout, stderr io.Writer) int {
 	if flags.NArg() != 0 {
 		return fail(fmt.Errorf("unexpected positional arguments"))
 	}
-	if config.SamplingProfile != "baseline" && config.SamplingProfile != "gemma" {
-		return fail(fmt.Errorf("sampling-profile must be baseline or gemma"))
-	}
-	if *seed < -1 {
-		return fail(fmt.Errorf("seed must be -1 or non-negative"))
-	}
-	if *seed >= 0 {
-		config.Seed = seed
-	}
-	if config.SamplingProfile == "gemma" {
-		explicitTemperature := false
-		flags.Visit(func(f *flag.Flag) {
-			if f.Name == "temperature" {
-				explicitTemperature = true
-			}
-		})
-		if !explicitTemperature {
-			config.Temperature = 1
-		}
-		topP, topK, minP := .95, 64, 0.0
-		config.TopP, config.TopK, config.MinP = &topP, &topK, &minP
-	}
-	if config.PromptProfile != "baseline" && config.PromptProfile != "focused" && config.PromptProfile != "test-first" {
-		return fail(fmt.Errorf("prompt-profile must be baseline, focused, or test-first"))
-	}
-	if config.ReadFormat != "text" && config.ReadFormat != "json" && config.ReadFormat != "xml" {
-		return fail(fmt.Errorf("read-format must be text, json, or xml"))
-	}
-	if *timeout <= 0 || *toolTimeout <= 0 || config.MaxTurns < 1 || config.MaxTokens < 1 || config.MaxHistoryBytes < 1 || config.Temperature < 0 || config.Temperature > 2 || math.IsNaN(config.Temperature) || math.IsInf(config.Temperature, 0) || config.Model == "" {
-		return fail(fmt.Errorf("invalid limits, temperature, or model"))
+	if *timeout <= 0 || config.MaxTokens < 1 || config.Model == "" {
+		return fail(fmt.Errorf("invalid limits or model"))
 	}
 	parsedURL, err := url.Parse(*endpoint)
 	if err != nil || parsedURL.Host == "" || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.User != nil || parsedURL.RawQuery != "" || parsedURL.Fragment != "" {
@@ -220,7 +188,7 @@ func cli(parent context.Context, argv []string, stdout, stderr io.Writer) int {
 	client := &Client{URL: *endpoint, APIKey: os.Getenv("GEMMA_API_KEY"), HTTP: &http.Client{
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 	}}
-	tools := &Tools{Root: root, TestCommand: command, ToolTimeout: *toolTimeout, Trace: trace, Edited: map[string]bool{}, SearchEnabled: config.EnableSearch, ReadDisabled: config.EditOnly, RichEditFeedback: config.RichEditFeedback}
+	tools := &Tools{Root: root, TestCommand: command, ToolTimeout: toolTimeout, Trace: trace, Edited: map[string]bool{}, RichEditFeedback: config.RichEditFeedback}
 	var result Summary
 	if *tui && isTerminal(stdout) {
 		result, err = runTUI(ctx, config, *prompt, client, tools, trace)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -57,14 +58,9 @@ type Config struct {
 	TaskReminder          bool     `json:"task_reminder"`
 	EditOnly              bool     `json:"edit_only"`
 	RichEditFeedback      bool     `json:"rich_edit_feedback"`
-	AutoTestAfterEdit     bool     `json:"auto_test_after_edit"`
 	DetectRepeatedEdits   bool     `json:"detect_repeated_edits"`
+	Ledger                bool     `json:"ledger"`
 	PreserveToolReasoning bool     `json:"preserve_tool_reasoning"`
-	SamplingProfile       string   `json:"sampling_profile,omitempty"`
-	TopP                  *float64 `json:"top_p,omitempty"`
-	TopK                  *int     `json:"top_k,omitempty"`
-	MinP                  *float64 `json:"min_p,omitempty"`
-	Seed                  *int     `json:"seed,omitempty"`
 }
 
 type Summary struct {
@@ -149,8 +145,12 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 	malformedRetries := 0
 	readCache := map[string]struct{ Body, ID string }{}
 	editAttempts := map[string]string{}
+	knownAbsent := map[string]bool{}
+	dirListing := map[string][]string{}
 	lastCall := ""
 	repeats := 0
+	completionRetries := 0
+	const maxCompletionRetries = 2
 	for turn := 1; turn <= config.MaxTurns; turn++ {
 		if err := ctx.Err(); err != nil {
 			result.Error = err.Error()
@@ -166,7 +166,6 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 			}
 			request.Tools = enabled
 		}
-		request.TopP, request.TopK, request.MinP, request.Seed = config.TopP, config.TopK, config.MinP, config.Seed
 		encoded, err := json.Marshal(request)
 		if err != nil {
 			result.Error = err.Error()
@@ -242,9 +241,16 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 			message.Reasoning = ""
 		}
 		if len(message.ToolCalls) > 1 {
-			result.Status = "protocol_error"
-			result.Error = "multiple tool calls despite parallel_tool_calls=false"
-			return
+			// Some models batch independent tool calls in one turn even when the
+			// request declares parallel_tool_calls=false. Rather than fail the run,
+			// execute only the first and drop the rest; the model naturally
+			// re-requests any dropped call once it sees the first result.
+			dropped := message.ToolCalls[1:]
+			message.ToolCalls = message.ToolCalls[:1]
+			if err := trace.Event("dropped_parallel_calls", map[string]any{"count": len(dropped)}); err != nil {
+				result.Error = err.Error()
+				return
+			}
 		}
 		if len(message.ToolCalls) == 0 {
 			if choice.FinishReason == "tool_calls" || strings.TrimSpace(message.Content) == "" {
@@ -259,8 +265,27 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 				if err != nil {
 					result.Status = "verification_error"
 					result.Error = err.Error()
-				} else if verification.ExitCode != 0 || verification.TimedOut {
+					return
+				}
+				if verification.ExitCode != 0 || verification.TimedOut {
 					result.Status = "verification_failed"
+					// Give the model a bounded number of chances to react to a failure it
+					// could not have seen: it only declared done, it was never told the
+					// declaration was wrong. This runs once per completion attempt, not
+					// once per edit, so a multi-file fix costs one test run per attempt
+					// instead of one per file touched.
+					if completionRetries < maxCompletionRetries && len(tools.Edited) > 0 {
+						completionRetries++
+						messages = append(messages, message)
+						messages = append(messages, Message{Role: "user", Content: fmt.Sprintf(
+							"Verification after your answer failed (exit_code=%d, timed_out=%v):\n%s\nThe task is not done. Keep investigating and fix the remaining failure.",
+							verification.ExitCode, verification.TimedOut, verification.Output)})
+						if err := trace.Event("completion_verification_failed", map[string]any{"attempt": completionRetries, "result": verification}); err != nil {
+							result.Error = err.Error()
+							return
+						}
+						continue
+					}
 				}
 			}
 			return
@@ -305,7 +330,78 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 			return
 		}
 		result.ToolCalls++
-		value, toolErr := tools.Execute(ctx, *call)
+		var value any
+		var toolErr error
+		var refusal string
+		if config.Ledger {
+			if fields, ok := args.(map[string]any); ok {
+				switch call.Function.Name {
+				case "read":
+					if path, ok := fields["path"].(string); ok && knownAbsent[path] {
+						hint := ""
+						if entries, ok := dirListing[filepath.Dir(path)]; ok {
+							hint = fmt.Sprintf(" Its parent directory %q actually contains: %s.", filepath.Dir(path), strings.Join(entries, ", "))
+						}
+						refusal = fmt.Sprintf("REFUSED: %q is already known not to exist; an earlier read failed on this exact path.%s Choose a different path instead of retrying this one.", path, hint)
+					}
+				case "edit":
+					path, _ := fields["path"].(string)
+					oldText, _ := fields["oldText"].(string)
+					newText, _ := fields["newText"].(string)
+					if outcome, tried := editAttempts[path+"\x00"+oldText+"\x00"+newText]; tried {
+						refusal = fmt.Sprintf("REFUSED: this exact edit (same path, oldText, and newText) was already tried earlier in this run. Outcome: %s. Make a different source change instead of repeating it.", outcome)
+					}
+				}
+			}
+		}
+		if refusal != "" {
+			toolErr = fmt.Errorf("%s", refusal)
+			if err := trace.Event("ledger_refused", map[string]any{"call_id": call.ID, "name": call.Function.Name, "reason": refusal}); err != nil {
+				result.Error = err.Error()
+				return
+			}
+		} else {
+			value, toolErr = tools.Execute(ctx, *call)
+			if config.Ledger {
+				if fields, ok := args.(map[string]any); ok {
+					switch call.Function.Name {
+					case "read":
+						if path, ok := fields["path"].(string); ok {
+							if toolErr != nil && strings.Contains(toolErr.Error(), "no such file or directory") {
+								knownAbsent[path] = true
+							} else if readResult, ok := value.(map[string]any); ok {
+								if isDir, _ := readResult["is_dir"].(bool); isDir {
+									if content, ok := readResult["content"].(string); ok && content != "" {
+										dirListing[path] = strings.Split(content, "\n")
+									} else {
+										dirListing[path] = nil
+									}
+								}
+							}
+						}
+					case "edit":
+						path, _ := fields["path"].(string)
+						oldText, _ := fields["oldText"].(string)
+						newText, _ := fields["newText"].(string)
+						editKey := path + "\x00" + oldText + "\x00" + newText
+						if toolErr != nil {
+							// A failed match (oldText not found, or not unique) is just as worth
+							// remembering as an applied-then-reverted edit: retrying the identical
+							// call will fail identically every time.
+							if _, exists := editAttempts[editKey]; !exists {
+								editAttempts[editKey] = "failed to apply earlier in this run: " + toolErr.Error()
+							}
+						} else if editResult, ok := value.(map[string]any); ok {
+							if applied, _ := editResult["applied"].(bool); applied {
+								if _, exists := editAttempts[editKey]; !exists {
+									editAttempts[editKey] = "applied earlier in this run, no further detail recorded"
+								}
+							}
+						}
+					}
+				}
+			}
+		}
 		payload := map[string]any{"result": value}
 		if toolErr != nil {
 			payload = map[string]any{"error": toolErr.Error()}
@@ -340,24 +436,6 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 			}
 		}
 		messages = append(messages, Message{Role: "tool", ToolCallID: call.ID, Content: string(body)})
-		if config.AutoTestAfterEdit && call.Function.Name == "edit" && toolErr == nil && len(tools.TestCommand) > 0 {
-			if applied, _ := value.(map[string]any)["applied"].(bool); applied {
-				verification, testErr := runCommand(ctx, tools.Root.Name(), tools.TestCommand, tools.ToolTimeout)
-				errText := ""
-				if testErr != nil {
-					errText = testErr.Error()
-				}
-				if err := trace.Event("auto_test", map[string]any{"after_call_id": call.ID, "result": verification, "error": errText}); err != nil {
-					result.Error = err.Error()
-					return
-				}
-				summary := fmt.Sprintf("Automatic verification after your edit (exit_code=%d, timed_out=%v):\n%s", verification.ExitCode, verification.TimedOut, verification.Output)
-				if testErr != nil {
-					summary = "Automatic verification after your edit failed to run: " + errText
-				}
-				messages = append(messages, Message{Role: "user", Content: summary})
-			}
-		}
 		if config.DetectRepeatedEdits && call.Function.Name == "edit" && toolErr == nil {
 			if fields, ok := args.(map[string]any); ok {
 				path, _ := fields["path"].(string)

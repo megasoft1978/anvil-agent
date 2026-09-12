@@ -16,13 +16,7 @@ import (
 func TestCLIInvalidInputs(t *testing.T) {
 	for _, args := range [][]string{
 		{}, {"--prompt", "a", "--prompt-file", "b"}, {"--prompt", " "}, {"--prompt", "a", "extra"},
-		{"--prompt", "a", "--timeout", "0s"}, {"--prompt", "a", "--tool-timeout", "-1s"},
-		{"--prompt", "a", "--prompt-profile", "unknown"},
-		{"--prompt", "a", "--sampling-profile", "unknown"}, {"--prompt", "a", "--seed", "-2"},
-		{"--prompt", "a", "--read-format", "unknown"},
-		{"--prompt", "a", "--max-turns", "0"}, {"--prompt", "a", "--max-tokens", "0"},
-		{"--prompt", "a", "--max-history-bytes", "0"}, {"--prompt", "a", "--temperature", "NaN"},
-		{"--prompt", "a", "--temperature", "Inf"}, {"--prompt", "a", "--temperature", "-1"},
+		{"--prompt", "a", "--timeout", "0s"}, {"--prompt", "a", "--max-tokens", "0"},
 		{"--prompt", "a", "--model", ""}, {"--prompt", "a", "--endpoint", "file:///tmp/model"},
 		{"--prompt", "a", "--endpoint", "http://user:secret@localhost/v1"},
 		{"--prompt", "a", "--endpoint", "http://localhost/v1?secret=x"},

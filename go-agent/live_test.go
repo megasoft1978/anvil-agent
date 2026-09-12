@@ -43,9 +43,6 @@ func TestLiveGemma4(t *testing.T) {
 	if os.Getenv("GEMMA_LIVE") != "1" {
 		t.Skip("opt-in only: GEMMA_LIVE=1; needs an already-running local Gemma server")
 	}
-	if os.Getenv("GEMMA_EDIT_ONLY") == "1" && os.Getenv("GEMMA_PRELOAD_SOURCES") != "1" {
-		t.Fatal("edit-only real-repo diagnostic requires GEMMA_PRELOAD_SOURCES=1")
-	}
 	allowPaging := os.Getenv("GEMMA_ALLOW_PAGING") == "1"
 	if allowPaging {
 		t.Log("paging abort explicitly disabled; memory measurements remain recorded")
@@ -87,12 +84,13 @@ func TestLiveGemma4(t *testing.T) {
 	}
 	model := os.Getenv("GEMMA_LIVE_MODEL")
 	if model == "" {
-		model = "gemma4"
+		model = "qwen30b-a3b"
 	}
 	timeout := os.Getenv("GEMMA_LIVE_TIMEOUT")
 	if timeout == "" {
 		timeout = "120s"
 	}
+	maxTokens := os.Getenv("GEMMA_LIVE_MAX_TOKENS")
 	stages := []string{"read-and-finish", "edit-and-test"}
 	if stage := os.Getenv("GEMMA_REPO_STAGE"); stage != "" {
 		if os.Getenv("GEMMA_PILOT") == "" {
@@ -112,38 +110,8 @@ func TestLiveGemma4(t *testing.T) {
 				t.Fatal(err)
 			}
 			args := []string{"--root", root, "--output", output, "--endpoint", endpoint, "--model", model, "--timeout", timeout}
-			if os.Getenv("GEMMA_PRESERVE_TOOL_REASONING") == "1" {
-				args = append(args, "--preserve-tool-reasoning")
-			}
-			if os.Getenv("GEMMA_TASK_REMINDER") == "1" {
-				args = append(args, "--task-reminder")
-			}
-			if profile := os.Getenv("GEMMA_SAMPLING_PROFILE"); profile != "" {
-				args = append(args, "--sampling-profile", profile)
-			}
-			if seed := os.Getenv("GEMMA_SEED"); seed != "" {
-				args = append(args, "--seed", seed)
-			}
-			if os.Getenv("GEMMA_ENABLE_SEARCH") == "1" {
-				args = append(args, "--enable-search")
-			}
-			if os.Getenv("GEMMA_DEDUP_READS") == "1" {
-				args = append(args, "--dedup-reads")
-			}
-			if profile := os.Getenv("GEMMA_PROMPT_PROFILE"); profile != "" {
-				args = append(args, "--prompt-profile", profile)
-			}
-			if format := os.Getenv("GEMMA_READ_FORMAT"); format != "" {
-				args = append(args, "--read-format", format)
-			}
-			if os.Getenv("GEMMA_RICH_EDIT_FEEDBACK") == "1" {
-				args = append(args, "--rich-edit-feedback")
-			}
-			if os.Getenv("GEMMA_AUTO_TEST_AFTER_EDIT") == "1" {
-				args = append(args, "--auto-test-after-edit")
-			}
-			if os.Getenv("GEMMA_DETECT_REPEATED_EDITS") == "1" {
-				args = append(args, "--detect-repeated-edits")
+			if maxTokens != "" {
+				args = append(args, "--max-tokens", maxTokens)
 			}
 			var task repoTask
 			var snapshot map[string][32]byte
@@ -164,9 +132,6 @@ func TestLiveGemma4(t *testing.T) {
 				}
 				report = filepath.Join(oracleDir, "oracle.json")
 				task, command, snapshot = prepareRepo(t, os.Getenv("GEMMA_PILOT"), stage, root, report)
-				if os.Getenv("GEMMA_EDIT_ONLY") == "1" {
-					args = append(args, "--edit-only")
-				}
 				encoded, err := json.Marshal(command)
 				if err != nil {
 					t.Fatal(err)

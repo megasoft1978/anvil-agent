@@ -1,8 +1,13 @@
-# Gemma coding harness (experimental)
+# Coding harness (targets Qwen3-30B-A3B)
 
-A small Go agent for controlled coding experiments against an already-running Gemma 4 llama-server.
+A small Go agent for controlled coding experiments against an already-running local llama-server.
 No external Go dependencies, Pi extensions, model downloads, server management, UI, or ambient project
 instructions. Go 1.24+, macOS or Linux. Existing kit installation and Pi defaults are unchanged.
+
+Tuned for `Qwen3-30B-A3B-Instruct-2507` (MoE, ~3B active params) after live testing against real
+upstream bugs (see TESTING.md) showed it, not Gemma 4, is the best model this hardware can run for
+real-repo work. `--recover-gemma` support and Gemma-specific sampling/prompt profiles are gone; the
+harness is a single fixed configuration rather than a matrix of opt-in experiments.
 
 The loop sends OpenAI-compatible chat requests with `tool_choice: "auto"` and
 `parallel_tool_calls: false`. It executes one tool at a time and finishes on an ordinary text reply.
@@ -27,48 +32,32 @@ Do not load it until the machine has enough RAM. The harness does not quit appli
 server flags. Dependencies for real-repo tasks must be installed before model residency.
 
 Default limits: 120 seconds **total**, including model requests, tools, and final verification;
-30 seconds per test command; 16 model requests; 3,072 output tokens per request; temperature 0.
+30 seconds per test command; 16 model requests; 8,192 output tokens per request; temperature 0.
 `--help` lists overrides. Supply `GEMMA_API_KEY` only if the endpoint requires authentication.
 
-`--prompt-profile baseline` (default) retains the original concise prompt. `--prompt-profile focused`
-is an experimental Gemma-oriented workflow prompt: source-first navigation, exact pagination,
-small edits, configured tests, and evidence-based completion. Both use the same native tools.
-For a controlled live comparison set `GEMMA_PROMPT_PROFILE=focused`; the selected initial prompt
-and configuration are retained in the trace. Do not infer superiority from a single successful run.
-`--prompt-profile test-first` is another candidate: reproduce the failing test before inspecting source.
-`--read-format text` is the default source representation; `json` restores the original wrapped result,
-and `xml` uses escaped metadata with CDATA source content. `GEMMA_READ_FORMAT` selects the same option
-in live tests. These change tool-result content only, not Gemma's native tool-call protocol.
+Three behaviors that used to be opt-in flags are now permanently on, because live testing showed
+each one measurably helps and none regress the offline suite (see TESTING.md for the runs):
 
-Two further opt-in experiments are `--dedup-reads` (normalize equivalent default offsets and reference
-earlier unchanged pages; the raw trace still stores each actual read) and `--enable-search` (a fourth
-tool finding literal text within one file, up to 20 matches with line numbers and nearby source).
-Search uses the same rooted UTF-8 regular-file restrictions, not a shell or recursive repository scan.
-Live equivalents are `GEMMA_DEDUP_READS=1` and `GEMMA_ENABLE_SEARCH=1`. Neither is enabled by default.
+- **Rich edit feedback**: a mismatched `edit` call gets the current source location and a reason
+  ("not found", "occurs N times", "no-op") instead of a bare error, so the model can actually see
+  what to fix instead of blindly retrying.
+- **Ledger**: the harness remembers every path confirmed absent and every edit already tried
+  (applied-then-reverted, or failed to apply) in the current run, and refuses an exact repeat before
+  it executes rather than letting the model burn a turn re-discovering the same dead end.
+- **Completion-verification retry**: when the model finishes with plain text and a test command is
+  configured, the harness always runs it (this is unconditional, not a flag). If it fails, the model
+  gets up to two more turns with the real failure fed back before the run gives up — this happens
+  once per completion attempt, not once per edit, so a multi-file fix costs one test run per attempt
+  instead of one per file touched.
 
-`--sampling-profile gemma` uses Google's recommended temperature 1.0, top-p .95, and top-k 64,
-and disables llama.cpp's additional min-p filter. `--temperature` explicitly overrides the profile's
-temperature; `--seed` pins a non-negative server sampling seed. Baseline sampling remains unchanged.
-Live equivalents: `GEMMA_SAMPLING_PROFILE=gemma` and `GEMMA_SEED=42`.
-See the [Gemma 4 model card](https://ai.google.dev/gemma/docs/core/model_card_4).
-
-`--task-reminder` restates only the original task after successful reads, retaining the tool result.
-Use `GEMMA_TASK_REMINDER=1` for live trials. `GEMMA_PRELOAD_SOURCES=1` is a separate, live-test-only
-diagnostic that supplies the complete designated source files up front. Label those results
-**source-provided**, not independent navigation or the earlier guided condition. It supplies buggy
-worktree source, never the reference fix, and keeps the same source-change and oracle checks.
-`GEMMA_PRELOAD_FILE=src/plugin/utc/index.js` narrows that diagnostic to one designated source file.
-`GEMMA_EDIT_ONLY=1` additionally uses a source-repair prompt and disables read/search for the real-repo
-stage; it requires source preloading. The equivalent CLI switch is `--edit-only`, for caller-supplied
-source tasks. These restricted diagnostic results must not be reported as normal agent navigation.
-
-Two 2026-09-11 opt-in experiments target the observed dayjs no-op/stale-edit failure mode (see
-TESTING.md): `--rich-edit-feedback` returns a bounded current-source snippet and a reason on every
-edit outcome (not-found, ambiguous, no-op, success) instead of a bare error — the old no-op/no-match
-errors told the model to "read the file and retry," which is impossible under `--edit-only`.
-`--auto-test-after-edit` runs the configured test command immediately after a successful edit and
-feeds the result back, instead of requiring the model to remember to call `run_tests`. Neither has a
-live-Gemma result yet; both default to off and change nothing else.
+Everything else that was previously a matrix of experimental flags (prompt profiles, read-format
+variants, dedup-reads, search, task-reminder, sampling profiles, preserve-tool-reasoning, per-edit
+auto-testing, Gemma markup recovery, seed, temperature, max-turns, max-history-bytes, tool-timeout)
+has been removed from the CLI — most were single-session diagnostics never adjusted in practice; a
+few (temperature, max-turns) turned out to never need changing once the completion-retry loop was in
+place, so a fixed sane default replaced the flag. The remaining CLI surface is: `--root`, `--endpoint`,
+`--prompt`/`--prompt-file`/`--task-file`, `--instructions`, `--output`, `--test-command`, `--timeout`,
+`--model`, `--max-tokens`, `--tui`.
 
 After a timeout with confirmed edits, use `GEMMA_REPLAY_TRACE=/path/to/trace.jsonl` plus `GEMMA_PILOT`
 and `GEMMA_REPO_STAGE` with `go test -run '^TestReplayRealRepoOracle$' -v -count=1`. This replays only
@@ -82,7 +71,6 @@ fresh fixture. Postmortem reports persist beside the trace; a postmortem pass is
 | `read` | `path`, optional 1-based `offset` | Reads a file or lists a directory; up to 200 lines/entries and 32 KiB per response. Use `next_offset` to continue. |
 | `edit` | `path`, `oldText`, `newText` | Replaces exactly one non-empty match in an existing file. Saves before/after evidence before writing. |
 | `run_tests` | `{}` | Runs the caller's fixed JSON argument list, without shell parsing. Available only with `--test-command`. |
-| `search` | optional `path` (default: whole worktree), `text` | Literal (non-regex) text search, repository-wide by default; a `path` restricts it to one file or subtree. Skips `.git`, `node_modules`, `dist`, `build`, `.next`, `vendor`, `target`, `__pycache__`, `.cache`, and unreadable/binary files. Bounded to 20 matches and 4,000 files scanned. Enable with `--enable-search`. |
 
 File tools use `os.Root` to reject paths and symlinks outside the selected worktree. They accept UTF-8
 regular files up to 1 MiB. They cannot create files or run arbitrary shell commands. The configured
@@ -90,18 +78,21 @@ test command executes repository code with your user permissions: **this is not 
 Use disposable worktrees and trusted test commands. Test stdout/stderr is capped at 32 KiB; process
 groups are killed at the command deadline so a watch process or child cannot keep the run alive.
 
-On text completion, the configured test command is run again under the remaining deadline. A zero
-exit means that command passed, not that an independent oracle proved the bug fixed. For measured
-real-repo results, grade separately using pristine oracle tests; the model can edit repository tests
-or configuration. Preserve guided and independent results as different conditions.
+On text completion, the configured test command is run under the remaining deadline; a zero exit
+means that command passed, not that an independent oracle proved the bug fixed — the model can edit
+repository tests or configuration. A non-zero exit triggers the completion-verification retry above
+(capped at two extra attempts, and only when at least one edit has actually been made) before the run
+is marked `verification_failed`. For measured real-repo results, grade separately using pristine
+oracle tests; preserve guided and independent results as different conditions.
 
-Gemma recovery recognizes both `<|tool_call>call:name{...}<tool_call|>` and the observed missing-`call:`
-variant. Identical repetitions across text/reasoning recover once. Distinct calls, incomplete spans,
-or missing closers are never guessed. Token-limit responses execute no tools. Native calls take
-precedence. Unrecoverable leaked output gets at most one correction per run; three identical
-consecutive tool calls stop as `stalled`, with a corrective warning after the second identical call.
-File-read responses send literal source text to the model; traces retain structured metadata and content.
-Use `--recover-gemma=false` for a native-only comparison.
+Qwen3-30B-A3B emits well-formed native tool calls, so the Gemma leaked-markup recovery path
+(`<|tool_call>call:name{...}<tool_call|>` and the missing-`call:` variant) exists but is normally
+unused; it stays available in `recovery.go` for anyone still driving Gemma through this harness.
+Token-limit responses execute no tools. Three identical consecutive tool calls stop as `stalled`,
+with a corrective warning after the second identical call. A model emitting more than one tool call
+in a single turn has only the first executed; the rest are dropped and traced as
+`dropped_parallel_calls` rather than failing the run. File-read responses send literal source text
+to the model; traces retain structured metadata and content.
 
 History has a 64 KiB request-byte ceiling and is never silently trimmed. This is not a tokenizer;
 the server remains responsible for its actual context-token limit.

@@ -58,7 +58,7 @@ func TestCLIEndToEnd(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			t.Error(err)
 		}
-		if request.ToolChoice != "auto" || request.Parallel || request.Stream || request.MaxTokens != 3072 {
+		if request.ToolChoice != "auto" || request.Parallel || request.Stream || request.MaxTokens != 8192 {
 			t.Errorf("unexpected request settings: %+v", request)
 		}
 		for _, tool := range request.Tools {
@@ -67,7 +67,7 @@ func TestCLIEndToEnd(t *testing.T) {
 			}
 		}
 		requests++
-		if requests > 1 {
+		if requests == 2 {
 			last := request.Messages[len(request.Messages)-1]
 			if last.Role != "tool" || last.ToolCallID != "call-1" {
 				t.Errorf("missing tool result linkage: %+v", last)
@@ -79,8 +79,6 @@ func TestCLIEndToEnd(t *testing.T) {
 		case 2:
 			reply(w, Message{ToolCalls: []ToolCall{call("edit", `{"path":"sum.txt","oldText":"wrong","newText":"right"}`)}}, "tool_calls")
 		case 3:
-			reply(w, Message{ToolCalls: []ToolCall{call("run_tests", `{}`)}}, "tool_calls")
-		case 4:
 			reply(w, Message{Content: "Fixed and tested."}, "stop")
 		default:
 			t.Error("unexpected extra request")
@@ -98,7 +96,7 @@ func TestCLIEndToEnd(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &summary); err != nil {
 		t.Fatal(err)
 	}
-	if summary.Status != "completed" || summary.Turns != 4 || summary.ToolCalls != 3 || summary.Verification == nil || summary.Verification.ExitCode != 0 {
+	if summary.Status != "completed" || summary.Turns != 3 || summary.ToolCalls != 2 || summary.Verification == nil || summary.Verification.ExitCode != 0 {
 		t.Fatalf("summary: %+v", summary)
 	}
 	data, _ := os.ReadFile(filepath.Join(root, "sum.txt"))
@@ -180,7 +178,7 @@ func TestAgentFailureBoundaries(t *testing.T) {
 	}{
 		{"truncated", "length", "truncated", Message{ToolCalls: []ToolCall{call("edit", `{"path":"a","oldText":"x","newText":"y"}`)}}, 1, 0},
 		{"empty", "stop", "empty_completion", Message{}, 1, 0},
-		{"multiple", "tool_calls", "protocol_error", Message{ToolCalls: []ToolCall{call("read", `{"path":"a"}`), call("read", `{"path":"b"}`)}}, 1, 0},
+			{"multiple", "tool_calls", "stalled", Message{ToolCalls: []ToolCall{call("read", `{"path":"a"}`), call("read", `{"path":"b"}`)}}, 3, 2},
 		{"malformed", "stop", "malformed_tool_call", Message{Content: "<tool_call|>"}, 2, 0},
 		{"stalled", "tool_calls", "stalled", Message{ToolCalls: []ToolCall{call("read", `{"path":"a"}`)}}, 3, 2},
 	} {
@@ -325,15 +323,16 @@ func TestDeduplicatedReadSeesEdits(t *testing.T) {
 	}
 }
 
-func TestAutoTestAfterEdit(t *testing.T) {
+// TestCompletionVerificationRetry exercises the retry loop: the model declares done with
+// a wrong fix, the harness's own end-of-run test catches it and hands the failure back
+// instead of ending the run, and the model gets a bounded chance to actually fix it.
+func TestCompletionVerificationRetry(t *testing.T) {
 	tools, trace := newTools(t)
 	if err := os.WriteFile(filepath.Join(tools.Root.Name(), "a"), []byte("wrong"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	tools.TestCommand = []string{"/bin/sh", "-c", `test "$(cat a)" = right`}
-	tools.RichEditFeedback = true
 	cfg := config()
-	cfg.AutoTestAfterEdit = true
 	turn := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		turn++
@@ -343,22 +342,25 @@ func TestAutoTestAfterEdit(t *testing.T) {
 		}
 		switch turn {
 		case 1:
-			reply(w, Message{ToolCalls: []ToolCall{call("edit", `{"path":"a","oldText":"wrong","newText":"right"}`)}}, "tool_calls")
-		default:
-			// The model never called run_tests itself; verification must already be in context.
+			reply(w, Message{ToolCalls: []ToolCall{call("edit", `{"path":"a","oldText":"wrong","newText":"still-wrong"}`)}}, "tool_calls")
+		case 2:
+			reply(w, Message{Content: "Fixed."}, "stop")
+		case 3:
 			last := request.Messages[len(request.Messages)-1]
-			if last.Role != "user" || !strings.Contains(last.Content, "exit_code=0") {
-				t.Fatalf("missing automatic verification message: %+v", last)
+			if last.Role != "user" || !strings.Contains(last.Content, "exit_code=1") {
+				t.Fatalf("missing completion-failure message: %+v", last)
 			}
-			reply(w, Message{Content: "Fixed, verified automatically."}, "stop")
+			reply(w, Message{ToolCalls: []ToolCall{call("edit", `{"path":"a","oldText":"still-wrong","newText":"right"}`)}}, "tool_calls")
+		default:
+			reply(w, Message{Content: "Fixed and verified."}, "stop")
 		}
 	}))
 	defer server.Close()
 	result := runAgent(context.Background(), cfg, "task", &Client{URL: server.URL, HTTP: server.Client()}, tools, &Trace{Writer: trace})
-	if result.Status != "completed" || result.ToolCalls != 1 || turn != 2 {
+	if result.Status != "completed" || result.ToolCalls != 2 || turn != 4 {
 		t.Fatalf("%+v turn=%d", result, turn)
 	}
-	if !strings.Contains(trace.String(), `"type":"auto_test"`) {
+	if !strings.Contains(trace.String(), `"type":"completion_verification_failed"`) {
 		t.Fatal("auto_test event not traced")
 	}
 }

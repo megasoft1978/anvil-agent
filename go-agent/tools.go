@@ -207,7 +207,7 @@ func (t *Tools) Execute(ctx context.Context, call ToolCall) (any, error) {
 		if end < len(lines) {
 			next = end + 1
 		}
-		return map[string]any{"path": args.Path, "content": output, "offset": offset, "next_offset": next, "total": len(lines)}, nil
+		return map[string]any{"path": args.Path, "content": output, "offset": offset, "next_offset": next, "total": len(lines), "is_dir": info.IsDir()}, nil
 	case "edit":
 		var args struct {
 			Path    string  `json:"path"`
