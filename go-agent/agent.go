@@ -428,7 +428,7 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 		}
 		if config.DedupReads && call.Function.Name == "read" && toolErr == nil {
 			if previous, ok := readCache[signature]; ok && previous.Body == string(body) {
-				body = []byte(fmt.Sprintf("Unchanged read. This exact page is already present in tool result %s above. Reuse that content instead of reading it again. Make the next source edit or run_tests to test your hypothesis.", previous.ID))
+				body = []byte(fmt.Sprintf("Unchanged read. This exact page is already present in tool result %s above and re-reading it found nothing new. Before your next tool call, state in one sentence a specific fact you are missing and where you expect to find it (a different file, a different offset, or a different tool) — then act on that, not on this same read again.", previous.ID))
 				if err := trace.Event("read_deduplicated", map[string]string{"call_id": call.ID, "original_call_id": previous.ID}); err != nil {
 					result.Error = err.Error()
 					return
