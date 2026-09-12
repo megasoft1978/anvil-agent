@@ -220,6 +220,14 @@ func TestRepeatWarningAllowsProgress(t *testing.T) {
 			if last.Role != "user" || !strings.Contains(last.Content, "You repeated the identical tool request") {
 				t.Error("missing repeat warning")
 			}
+			// The repeated tool is banned for exactly this one turn, not merely
+			// discouraged: the model cannot re-request "read" here even if it ignores
+			// the correction message, because it is not in the declared tool set.
+			for _, tool := range request.Tools {
+				if tool.Function.Name == "read" {
+					t.Error("repeated tool must be excluded from this turn's tool list")
+				}
+			}
 			reply(w, Message{ToolCalls: []ToolCall{call("edit", `{"path":"a","oldText":"x","newText":"y"}`)}}, "tool_calls")
 		default:
 			reply(w, Message{Content: "Fixed"}, "stop")
@@ -232,6 +240,56 @@ func TestRepeatWarningAllowsProgress(t *testing.T) {
 	}
 	if strings.Count(trace.String(), `"reason":"repeated tool request"`) != 1 {
 		t.Fatal("repeat correction not recorded once")
+	}
+	if !strings.Contains(trace.String(), `"tool_banned_for_turn"`) || !strings.Contains(trace.String(), `"tool":"read"`) {
+		t.Fatal("expected read to be traced as banned for one turn")
+	}
+}
+
+// TestBannedToolClearsAfterOneTurn confirms the exclusion is scoped to exactly the
+// turn immediately following the second identical call, not the rest of the run: a
+// later, unrelated repeat of the same tool name must be allowed to execute again.
+func TestBannedToolClearsAfterOneTurn(t *testing.T) {
+	tools, trace := newTools(t)
+	if err := os.WriteFile(filepath.Join(tools.Root.Name(), "a"), []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		var request Request
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+		}
+		switch requests {
+		case 1, 2:
+			reply(w, Message{ToolCalls: []ToolCall{call("read", `{"path":"a"}`)}}, "tool_calls")
+		case 3:
+			for _, tool := range request.Tools {
+				if tool.Function.Name == "read" {
+					t.Error("read must be banned on the turn right after the 2nd identical call")
+				}
+			}
+			reply(w, Message{ToolCalls: []ToolCall{call("edit", `{"path":"a","oldText":"x","newText":"y"}`)}}, "tool_calls")
+		case 4:
+			found := false
+			for _, tool := range request.Tools {
+				if tool.Function.Name == "read" {
+					found = true
+				}
+			}
+			if !found {
+				t.Error("read ban must not persist past the one turn it applied to")
+			}
+			reply(w, Message{ToolCalls: []ToolCall{call("read", `{"path":"a"}`)}}, "tool_calls")
+		default:
+			reply(w, Message{Content: "done"}, "stop")
+		}
+	}))
+	defer server.Close()
+	result := runAgent(context.Background(), config(), "task", &Client{URL: server.URL, HTTP: server.Client()}, tools, &Trace{Writer: trace})
+	if result.Status != "completed" {
+		t.Fatalf("got %+v", result)
 	}
 }
 

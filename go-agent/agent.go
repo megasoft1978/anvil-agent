@@ -149,6 +149,7 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 	dirListing := map[string][]string{}
 	lastCall := ""
 	repeats := 0
+	bannedTool := ""
 	completionRetries := 0
 	const maxCompletionRetries = 2
 	for turn := 1; turn <= config.MaxTurns; turn++ {
@@ -165,6 +166,27 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 				}
 			}
 			request.Tools = enabled
+		}
+		if bannedTool != "" {
+			// A textual correction alone did not stop the model from repeating this exact
+			// call once; for this one turn, remove the tool from the declared set entirely
+			// so the dead action is ungenerable rather than merely discouraged. Applies for
+			// a single turn only — banning permanently could strand a task that genuinely
+			// needs that tool once (e.g. only one file left to read).
+			var withoutBanned []ToolDefinition
+			for _, tool := range request.Tools {
+				if tool.Function.Name != bannedTool {
+					withoutBanned = append(withoutBanned, tool)
+				}
+			}
+			if len(withoutBanned) > 0 {
+				request.Tools = withoutBanned
+				if err := trace.Event("tool_banned_for_turn", map[string]string{"tool": bannedTool}); err != nil {
+					result.Error = err.Error()
+					return
+				}
+			}
+			bannedTool = ""
 		}
 		encoded, err := json.Marshal(request)
 		if err != nil {
@@ -469,6 +491,7 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 				result.Error = err.Error()
 				return
 			}
+			bannedTool = call.Function.Name
 		}
 	}
 	result.Status = "turn_limit"
