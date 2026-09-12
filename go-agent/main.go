@@ -50,15 +50,16 @@ func cli(parent context.Context, argv []string, stdout, stderr io.Writer) int {
 	timeout := flags.Duration("timeout", 120*time.Second, "total deadline, including requests, tools, and final verification")
 	// Everything below is a fixed default tuned for Qwen3-30B-A3B (the model this harness
 	// targets) rather than a CLI flag: rich edit feedback, the ledger's repeat-action
-	// refusal, greedy sampling, 16 turns, a 30s test-command deadline, and a 64 KiB
-	// history ceiling. Live testing showed each of these measurably helps or was never
-	// once adjusted in practice; --timeout, --max-tokens, and --model are the knobs that
-	// actually vary run to run.
+	// refusal, read deduplication, greedy sampling, 16 turns, a 30s test-command deadline,
+	// and a 64 KiB history ceiling. Live testing showed each of these measurably helps or
+	// was never once adjusted in practice; --timeout, --max-tokens, and --model are the
+	// knobs that actually vary run to run.
 	config := Config{
 		ReadFormat:       "text",
 		PromptProfile:    "baseline",
 		RichEditFeedback: true,
 		Ledger:           true,
+		DedupReads:       true,
 		MaxTurns:         16,
 		MaxHistoryBytes:  64 << 10,
 	}
