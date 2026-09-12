@@ -1,0 +1,26 @@
+[
+  {
+    "name": "EXP-077 closer-only stop",
+    "source": "Archived EXP-077 failure described in pi-extensions/gemma4-tool-recovery.ts",
+    "content": "",
+    "reasoning_content": "<|channel>thought\n<tool_call|><channel|>",
+    "finish_reason": "stop",
+    "recovered_name": ""
+  },
+  {
+    "name": "EXP-081 first missing-call done span",
+    "source": "results/EXP-081/20260910_gate1_smoke_server.log line 166 in adjacent research repository",
+    "content": "<|tool_call>:done{message:<|\"|>Hello! I am ready to help you with your coding tasks. How can I assist you today?<|\"|>}<tool_call|>]",
+    "reasoning_content": "",
+    "finish_reason": "stop",
+    "recovered_name": "done"
+  },
+  {
+    "name": "EXP-081 repeated missing-call done span",
+    "source": "results/EXP-081/20260910_gate1_smoke_server.log line 168; the repeated span is generated 60 times by the test",
+    "content": "<|channel>thought\n<channel|><|tool_call>:done{message:<|\"|>Hello! How can I help you today? I'm ready to assist with coding, debugging, or any other tasks you have in mind.<|\"|>}<tool_call|>]",
+    "reasoning_content": "",
+    "finish_reason": "length",
+    "recovered_name": "done"
+  }
+]
