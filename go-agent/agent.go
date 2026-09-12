@@ -48,6 +48,11 @@ type Config struct {
 	MaxTurns              int      `json:"max_turns"`
 	MaxTokens             int      `json:"max_tokens"`
 	Temperature           float64  `json:"temperature"`
+	TopP                  *float64 `json:"top_p,omitempty"`
+	TopK                  *int     `json:"top_k,omitempty"`
+	PresencePenalty       *float64 `json:"presence_penalty,omitempty"`
+	RepeatPenalty         *float64 `json:"repeat_penalty,omitempty"`
+	Seed                  *int     `json:"seed,omitempty"`
 	RecoverToolCalls      bool     `json:"recover_tool_calls"`
 	MaxHistoryBytes       int      `json:"max_history_bytes"`
 	Instructions          string   `json:"instructions,omitempty"`
@@ -157,7 +162,7 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 			result.Error = err.Error()
 			return
 		}
-		request := Request{Model: config.Model, Messages: messages, Tools: toolDefinitions(len(tools.TestCommand) > 0, tools.SearchEnabled), ToolChoice: "auto", MaxTokens: config.MaxTokens, Temperature: config.Temperature}
+		request := Request{Model: config.Model, Messages: messages, Tools: toolDefinitions(len(tools.TestCommand) > 0, tools.SearchEnabled), ToolChoice: "auto", MaxTokens: config.MaxTokens, Temperature: config.Temperature, TopP: config.TopP, TopK: config.TopK, PresencePenalty: config.PresencePenalty, RepeatPenalty: config.RepeatPenalty, Seed: config.Seed}
 		if tools.ReadDisabled {
 			var enabled []ToolDefinition
 			for _, tool := range request.Tools {

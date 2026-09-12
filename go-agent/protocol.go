@@ -39,18 +39,20 @@ type ToolDefinition struct {
 }
 
 type Request struct {
-	TopP        *float64         `json:"top_p,omitempty"`
-	TopK        *int             `json:"top_k,omitempty"`
-	MinP        *float64         `json:"min_p,omitempty"`
-	Seed        *int             `json:"seed,omitempty"`
-	Model       string           `json:"model"`
-	Messages    []Message        `json:"messages"`
-	Tools       []ToolDefinition `json:"tools"`
-	ToolChoice  string           `json:"tool_choice"`
-	Parallel    bool             `json:"parallel_tool_calls"`
-	Stream      bool             `json:"stream"`
-	Temperature float64          `json:"temperature"`
-	MaxTokens   int              `json:"max_tokens"`
+	TopP            *float64         `json:"top_p,omitempty"`
+	TopK            *int             `json:"top_k,omitempty"`
+	MinP            *float64         `json:"min_p,omitempty"`
+	Seed            *int             `json:"seed,omitempty"`
+	PresencePenalty *float64         `json:"presence_penalty,omitempty"`
+	RepeatPenalty   *float64         `json:"repeat_penalty,omitempty"`
+	Model           string           `json:"model"`
+	Messages        []Message        `json:"messages"`
+	Tools           []ToolDefinition `json:"tools"`
+	ToolChoice      string           `json:"tool_choice"`
+	Parallel        bool             `json:"parallel_tool_calls"`
+	Stream          bool             `json:"stream"`
+	Temperature     float64          `json:"temperature"`
+	MaxTokens       int              `json:"max_tokens"`
 }
 
 type Response struct {

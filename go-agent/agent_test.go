@@ -178,7 +178,7 @@ func TestAgentFailureBoundaries(t *testing.T) {
 	}{
 		{"truncated", "length", "truncated", Message{ToolCalls: []ToolCall{call("edit", `{"path":"a","oldText":"x","newText":"y"}`)}}, 1, 0},
 		{"empty", "stop", "empty_completion", Message{}, 1, 0},
-			{"multiple", "tool_calls", "stalled", Message{ToolCalls: []ToolCall{call("read", `{"path":"a"}`), call("read", `{"path":"b"}`)}}, 3, 2},
+		{"multiple", "tool_calls", "stalled", Message{ToolCalls: []ToolCall{call("read", `{"path":"a"}`), call("read", `{"path":"b"}`)}}, 3, 2},
 		{"malformed", "stop", "malformed_tool_call", Message{Content: "<tool_call|>"}, 2, 0},
 		{"stalled", "tool_calls", "stalled", Message{ToolCalls: []ToolCall{call("read", `{"path":"a"}`)}}, 3, 2},
 	} {

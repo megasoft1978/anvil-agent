@@ -50,10 +50,24 @@ func cli(parent context.Context, argv []string, stdout, stderr io.Writer) int {
 	timeout := flags.Duration("timeout", 120*time.Second, "total deadline, including requests, tools, and final verification")
 	// Everything below is a fixed default tuned for Qwen3-30B-A3B (the model this harness
 	// targets) rather than a CLI flag: rich edit feedback, the ledger's repeat-action
-	// refusal, read deduplication, greedy sampling, 16 turns, a 30s test-command deadline,
-	// and a 64 KiB history ceiling. Live testing showed each of these measurably helps or
-	// was never once adjusted in practice; --timeout, --max-tokens, and --model are the
-	// knobs that actually vary run to run.
+	// refusal, read deduplication, 16 turns, a 30s test-command deadline, and a 64 KiB
+	// history ceiling. Live testing showed each of these measurably helps or was never
+	// once adjusted in practice; --timeout, --max-tokens, and --model are the knobs that
+	// actually vary run to run.
+	//
+	// Sampling is Qwen's own documented recommendation for this model in instruct/coding
+	// use (temperature 0.7, top_p 0.8, top_k 20, presence_penalty 1.0, repetition_penalty
+	// 1.05), not greedy decoding: the model card explicitly warns greedy decoding can
+	// cause the exact "endless repetition" failure this harness spent real effort
+	// building structural workarounds for (the ledger, read-dedup, and the per-turn tool
+	// ban). A fixed seed keeps runs reproducible for the regression suite despite
+	// non-zero temperature.
+	temperature := 0.7
+	topP := 0.8
+	topK := 20
+	presencePenalty := 1.0
+	repeatPenalty := 1.05
+	seed := 42
 	config := Config{
 		ReadFormat:       "text",
 		PromptProfile:    "baseline",
@@ -63,6 +77,12 @@ func cli(parent context.Context, argv []string, stdout, stderr io.Writer) int {
 		RecoverToolCalls: true,
 		MaxTurns:         16,
 		MaxHistoryBytes:  64 << 10,
+		Temperature:      temperature,
+		TopP:             &topP,
+		TopK:             &topK,
+		PresencePenalty:  &presencePenalty,
+		RepeatPenalty:    &repeatPenalty,
+		Seed:             &seed,
 	}
 	toolTimeout := 30 * time.Second
 	tui := flags.Bool("tui", false, "launch the interactive terminal UI instead of one-shot JSON output; silently falls back to headless when stdout is not a terminal")
