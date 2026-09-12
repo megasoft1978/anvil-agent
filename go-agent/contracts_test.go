@@ -149,7 +149,7 @@ func TestTurnLimitAndNativeOnlyMode(t *testing.T) {
 		t.Fatalf("got %+v", result)
 	}
 	cfg = config()
-	cfg.RecoverGemma = false
+	cfg.RecoverToolCalls = false
 	result = runAgent(context.Background(), cfg, "task", &Client{URL: server.URL, HTTP: server.Client()}, tools, &Trace{Writer: trace})
 	if result.Status != "malformed_tool_call" || result.ToolCalls != 0 {
 		t.Fatalf("native-only got %+v", result)

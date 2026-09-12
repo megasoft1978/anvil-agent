@@ -48,7 +48,7 @@ type Config struct {
 	MaxTurns              int      `json:"max_turns"`
 	MaxTokens             int      `json:"max_tokens"`
 	Temperature           float64  `json:"temperature"`
-	RecoverGemma          bool     `json:"recover_gemma"`
+	RecoverToolCalls      bool     `json:"recover_tool_calls"`
 	MaxHistoryBytes       int      `json:"max_history_bytes"`
 	Instructions          string   `json:"instructions,omitempty"`
 	PromptProfile         string   `json:"prompt_profile,omitempty"`
@@ -203,20 +203,22 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 		}
 		message := choice.Message
 		message.Role = "assistant"
-		leaked := hasMarkers(message.Content) || hasMarkers(message.Reasoning)
+		detected := detectRecoverers(message.Content, message.Reasoning)
+		leaked := len(detected) > 0
 		if len(message.ToolCalls) == 0 && leaked {
 			var call *ToolCall
+			var parser string
 			var recoveryErr error
-			if config.RecoverGemma {
-				call, recoveryErr = recoverCall(message.Content, message.Reasoning)
+			if config.RecoverToolCalls {
+				call, parser, recoveryErr = recoverAny(declaredToolNames(request.Tools), message.Content, message.Reasoning)
 			}
 			if call != nil && recoveryErr == nil {
-				call.ID = fmt.Sprintf("gemma_recovered_%d", turn)
+				call.ID = fmt.Sprintf("recovered_%s_%d", parser, turn)
 				message.ToolCalls = []ToolCall{*call}
 				// The raw response is retained in the trace; avoid feeding a repeated malformed loop back.
 				message.Content = ""
 				result.Recoveries++
-				if err := trace.Event("recovery", call); err != nil {
+				if err := trace.Event("recovery", map[string]any{"parser": parser, "call": call}); err != nil {
 					result.Error = err.Error()
 					return
 				}

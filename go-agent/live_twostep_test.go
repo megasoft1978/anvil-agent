@@ -83,7 +83,7 @@ func TestLiveGemma4TwoStep(t *testing.T) {
 	trace1 := &Trace{Writer: diagnoseTrace, Progress: os.Stderr}
 	tools1 := &Tools{Root: root1Opened, ToolTimeout: stageBudget, Trace: trace1,
 		Edited: map[string]bool{}, SearchEnabled: true}
-	cfg1 := Config{Model: model, MaxTurns: 16, MaxTokens: 3072, Temperature: 0, MaxHistoryBytes: 64 << 10, RecoverGemma: true}
+	cfg1 := Config{Model: model, MaxTurns: 16, MaxTokens: 3072, Temperature: 0, MaxHistoryBytes: 64 << 10, RecoverToolCalls: true}
 	ctx1, cancel1 := context.WithTimeout(context.Background(), stageBudget)
 	defer cancel1()
 	result1 := runAgent(ctx1, cfg1, diagnosePrompt, client, tools1, trace1)
@@ -119,7 +119,7 @@ func TestLiveGemma4TwoStep(t *testing.T) {
 	trace2 := &Trace{Writer: implementTrace, Progress: os.Stderr}
 	tools2 := &Tools{Root: root2Opened, TestCommand: command2, ToolTimeout: stageBudget, Trace: trace2,
 		Edited: map[string]bool{}, ReadDisabled: true}
-	cfg2 := Config{Model: model, MaxTurns: 16, MaxTokens: 3072, Temperature: 0, MaxHistoryBytes: 64 << 10, RecoverGemma: true}
+	cfg2 := Config{Model: model, MaxTurns: 16, MaxTokens: 3072, Temperature: 0, MaxHistoryBytes: 64 << 10, RecoverToolCalls: true}
 	ctx2, cancel2 := context.WithTimeout(context.Background(), stageBudget)
 	defer cancel2()
 	result2 := runAgent(ctx2, cfg2, task2.Report, client, tools2, trace2)

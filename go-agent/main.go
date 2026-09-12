@@ -60,6 +60,7 @@ func cli(parent context.Context, argv []string, stdout, stderr io.Writer) int {
 		RichEditFeedback: true,
 		Ledger:           true,
 		DedupReads:       true,
+		RecoverToolCalls: true,
 		MaxTurns:         16,
 		MaxHistoryBytes:  64 << 10,
 	}

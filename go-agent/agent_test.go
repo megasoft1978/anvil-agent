@@ -37,7 +37,7 @@ func newTools(t *testing.T) (*Tools, *bytes.Buffer) {
 }
 
 func config() Config {
-	return Config{Model: "gemma4", MaxTurns: 8, MaxTokens: 3072, MaxHistoryBytes: 64 << 10, RecoverGemma: true}
+	return Config{Model: "gemma4", MaxTurns: 8, MaxTokens: 3072, MaxHistoryBytes: 64 << 10, RecoverToolCalls: true}
 }
 
 func TestCLIEndToEnd(t *testing.T) {

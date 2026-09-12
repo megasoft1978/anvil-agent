@@ -24,6 +24,18 @@ func hasMarkers(text string) bool {
 	return false
 }
 
+// gemmaRecoverParse adapts recoverCall to the recoverer.parse shape: it ignores allowed
+// (the Gemma dialect is never allowlist-checked; see TestObservedGemma4ParserRegressions,
+// which fixtures a recovered call named "done" that is not a declared tool) and returns
+// at most one call, matching recoverCall's own single-call contract.
+func gemmaRecoverParse(text string, allowed map[string]bool) ([]ToolCall, error) {
+	call, err := recoverCall(text)
+	if err != nil || call == nil {
+		return nil, err
+	}
+	return []ToolCall{*call}, nil
+}
+
 // Recover only complete, identical calls. Multiple distinct calls or any incomplete opener are an
 // error, never a guess. The caller refuses token-truncated responses before calling this function.
 func recoverCall(texts ...string) (*ToolCall, error) {
