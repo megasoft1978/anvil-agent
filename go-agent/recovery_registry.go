@@ -11,7 +11,7 @@ var errMultipleDistinctCalls = errors.New("multiple distinct leaked calls")
 // the same text parsed cleanly. Adding a new malformed format observed from a new
 // model means adding one more recoverer here, never widening an existing one.
 type recoverer struct {
-	name  string
+	name   string
 	detect func(text string) bool
 	// parse returns every call found in text. allowed is the set of tool names declared
 	// for this turn; a recoverer that opts into useAllowed must reject any other name.
@@ -19,11 +19,10 @@ type recoverer struct {
 	useAllowed bool
 }
 
-// tools_wrap (Qwen2.5-Coder-14B's <tools>{...}</tools> shape) is added once a verbatim
-// capture exists to build and test the parser against; see TESTING.md.
 var recoverers = []recoverer{
 	{name: "gemma_markup", detect: hasMarkers, parse: gemmaRecoverParse, useAllowed: false},
 	{name: "xml_attr", detect: xmlAttrDetect, parse: xmlAttrParse, useAllowed: true},
+	{name: "json_fence", detect: jsonFenceDetect, parse: jsonFenceParse, useAllowed: true},
 }
 
 // declaredToolNames returns the set of tool names available this turn, so a recovered
