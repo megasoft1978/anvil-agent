@@ -133,3 +133,68 @@ Four opt-in changes, all off by default, full suite 138/138 (was 135), `go vet` 
 
 None of these four changes have a live-Gemma result yet. They are the plumbing the next guided
 dayjs attempt needs, not evidence themselves.
+
+## 2026-09-12 live evaluation: model comparison, dayjs still unsolved, two root causes isolated
+
+Live-tested `-rich-edit-feedback` and `-auto-test-after-edit` for the first time, added a fifth
+opt-in change (`-detect-repeated-edits`), and ran the guided/independent stages against five
+additional models beyond `gemma-4-26B-A4B-it-UD-IQ2_M-attnQ4K.gguf`, all through the same harness
+and oracle. Every result below was independently re-verified this session (baselines re-run,
+edits re-applied to a fresh worktree copy and graded against the real Jest/vitest command), not
+assumed from a model's own claimed "tests passed" text.
+
+**Models tried:** `gemma-4-26B-A4B-it-UD-IQ2_M-attnQ4K.gguf` (MoE, local, this kit's target model),
+`unsloth/Qwen3.8-27B-GGUF` at `UD-Q2_K_XL` (9.83GB) and `UD-IQ2_XXS` (7.27GB), `Qwen2.5-Coder-7B-`
+and `-14B-Instruct-GGUF` at `Q4_K_M`, `unsloth/gemma-4-E4B-it-GGUF` at `Q4_K_M`. Server flags and
+port unchanged from the kit defaults; context dropped to 8192 only where a model's KV cache did not
+fit at 24576 on this machine's memory ceiling.
+
+**Guided date-fns:** gemma4 attnQ4K passes at 120s (unchanged from September 10). Qwen3.8-27B
+Q2_K_XL passes but needs ~240s, not 120s — added `GEMMA_LIVE_TIMEOUT` (default unchanged at 120s)
+to `live_test.go` so a live run can override the hardcoded per-stage deadline for slower models.
+Qwen2.5-Coder-7B and -14B are untestable in this harness: both emit ad-hoc XML-ish tool-call
+syntax (`<function name="..."/>`, `<tools>{...}</tools>`) instead of a real `tool_calls` response,
+confirmed via `--log-prompts-dir` that the rendered prompt correctly includes the Hermes-style
+`<tool_call>` instructions — the model simply does not follow its own chat template. Same defect
+at both sizes. `gemma-4-E4B-it` Q4_K_M produces a wrong fix (`Math.min`/`Math.max` instead of a
+numeric-sort comparator) and confabulates "tests passed" while its own verification exit code was 1.
+`IQ2_XXS` degrades coherence rather than improving speed: one 180s attempt generated 2,000+ tokens
+without ever completing a turn.
+
+**Guided dayjs:** unsolved by every combination above, and by every `-edit-only`/`-preload-sources`
+config tried, at budgets from 120s up to 2,160s (36 minutes). Qwen3.8-27B Q2_K_XL in edit-only mode
+is the one model that ever produces a real edit attempt: it independently identifies dayjs's actual
+`$x.$localOffset` clone-tracking mechanism (confirmed against the true upstream fix,
+`iamkun/dayjs@fefdcd4`) and gets accurate `run_tests` feedback after every edit via
+`-auto-test-after-edit`, including a concrete regression signal when one attempt broke a
+previously-passing test. Despite that, across a 25-minute and a 36-minute run it cycles through
+the same 2-3 hypotheses (apply → see it doesn't fix the target test → revert → re-apply the
+identical edit again later in the same run) rather than converging. `-detect-repeated-edits`
+(new this session) confirmed this precisely: it fired correctly when the model re-proposed an
+edit identical to one already applied and reverted earlier in the run, and the model repeated the
+edit anyway immediately after being told so in plain text. More time does not help; the 36-minute
+run's later edits are byte-for-byte repeats of its own first three.
+
+**Guided vs. independent (no relevant-file hint):** date-fns-independent isolates diagnosis from
+repair. Qwen3.8-27B independently locates `src/isWithinInterval/index.ts` and its `toDate` import
+in 4 calls, comparable in efficiency to the guided run, but times out at 300s before emitting the
+edit call — inference speed, not navigation, is the constraint. gemma4 attnQ4K stalls in 47s (well
+under its 120s budget, ruling out speed as the cause here): it finds the correct source file on
+its first attempt, then guesses a plausible-but-wrong test path
+(`test/isWithinInterval/index.test.ts`), lists `test/` and receives clear proof the guess is wrong
+(only `dst/`, `formatISO/`, `formatRFC3339/` exist there), and repeats the same disproven path two
+more times anyway — triggering the harness's three-identical-calls stall. It never revisits the
+sibling `test.ts` next to the `index.ts` it had already read three calls earlier.
+
+**Conclusion — two distinct, non-overlapping bottlenecks, not one:**
+- gemma4-26B-A4B: a genuine failure to incorporate a directly disconfirming tool result into its
+  next action. Fast, but gets stuck on the first wrong turn regardless of budget.
+- Qwen3.8-27B UD-Q2_K_XL: navigates and self-corrects correctly using real test feedback, but is
+  too slow on this hardware (M1, 16GB) to finish either diagnosis or repair inside a practical
+  time budget.
+
+Neither is fixed by the four September 11 changes or by `-detect-repeated-edits`; both are
+model/hardware limits, not interface gaps. `-rich-edit-feedback`, `-auto-test-after-edit`, and
+`-detect-repeated-edits` all now have live confirmation that they fire and deliver correct
+information — the remaining gap is that the model doesn't act on it, not that the harness fails
+to supply it.
