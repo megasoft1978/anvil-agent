@@ -24,9 +24,8 @@ server flags are kept together so the shipped configuration stays reproducible.
 Bugs fixed across 9 realistic multi-file projects (React + Express + TypeScript), reported the way you'd
 actually describe them to a coding agent: by symptom, never by cause. Every model below was run
 **agentically** — real Read/Edit tools, no command execution in the loop, same 9 scenarios, same
-`benchmarks/grade.mjs` oracle — because that's how this project is actually used; a single raw completion
-with no tools isn't a realistic usage pattern, so that measurement has been dropped rather than kept as a
-misleadingly-high headline number.
+`benchmarks/grade.mjs` grader. It combines executable checks with source-pattern checks; the
+optimization plan reports these separately.
 
 | Model | Bugs fixed | Notes |
 |---|---|---|
@@ -44,26 +43,9 @@ Sonnet's 3 misses: `cart-checkout`'s discount-before-tax ordering, and 2 of `rea
 sender seeing its own broadcast edit, and the `opId`-collision case). Opus's 1 miss: that same
 `opId`-collision case — the one bug neither model fixed.
 
-Measured 2026-09-13 on an Apple M1 Mac mini, 16GB. Raw decode speed for the shipped config, measured
-separately (not part of the scenario runs above): **22.5 tok/s** — `setup.sh --report-speed` reproduces
-this on your own hardware. Runs in about 12GB total: ~10.7GB of model weights on disk, plus working memory
-while the server runs.
-
-| Chip | tokens/sec (Qwen3.6-35B-A3B-UD-IQ2_M, shipped config) |
-|---|---|
-| M1 | **22.5 — measured** (mean across the full suite) |
-| M2 / M3 | ~33.1 — estimated |
-| M2 Pro | ~66.2 — estimated |
-| M3 Pro | ~49.6 — estimated |
-| M1/M2/M3 Max | ~132.4 — estimated |
-| M4 | ~39.7 — estimated |
-| M4 Pro | ~90.3 — estimated |
-| M4 Max | ~180.7 — estimated |
-
-Non-M1 numbers are estimated by scaling the M1 measurement by each chip's published memory-bandwidth ratio
-against M1's ~68GB/s — this harness is memory-bandwidth-bound (a MoE model reads a different slice of
-weights per token, not compute-bound math), so tokens/sec tracks bandwidth roughly linearly. Not measured —
-run `--report-speed` to contribute a real one.
+These historical results were recorded on an Apple M1 Mac mini with 16 GiB unified memory.
+Future measurements use complete CLI tool-calling runs, with verified repairs, elapsed time,
+and peak memory reported together. See [the optimization handoff](docs/OPTIMIZATION-HANDOFF.md).
 
 **Code-quality verdict, judged by Opus 5 itself** (given both models' diffs for 3 of the 9 scenarios,
 told explicitly which set was its own output, asked to be self-critical rather than favor itself):
@@ -89,7 +71,6 @@ Passing a flag through a pipe needs `bash -s --` (otherwise bash reads the flag 
 curl -fsSL <raw-url>/setup.sh | bash -s -- --doctor          # diagnose an existing install, read-only
 curl -fsSL <raw-url>/setup.sh | bash -s -- --start-only       # (re)start the server with the validated flags
 curl -fsSL <raw-url>/setup.sh | bash -s -- --upgrade          # reapply the current config + restart the server
-curl -fsSL <raw-url>/setup.sh | bash -s -- --report-speed     # measure real tokens/sec on a non-M1 chip
 curl -fsSL <raw-url>/uninstall.sh | bash                      # remove everything
 ```
 

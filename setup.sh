@@ -11,14 +11,9 @@
 #   curl -fsSL <raw>/setup.sh | bash -s -- --force-download # re-download the model even if a same-size file exists
 #   curl -fsSL <raw>/setup.sh | bash -s -- --check           # compare this install against the latest release
 #   curl -fsSL <raw>/setup.sh | bash -s -- --upgrade         # reapply current config + restart the server
-#   curl -fsSL <raw>/setup.sh | bash -s -- --report-speed    # measure real tokens/sec on an estimate-only chip
 #
 # Modifiers: --yes answers yes to EVERY prompt, including "install llama.cpp now?" (brew) -- it is explicit
 # consent for an unattended install, so only pass it when that is what you want.
-#
-# One mode needs a real git checkout, not the curl-pipe install, because it has data too large to embed here:
-#
-#   ./setup.sh --benchmark [scenario-id|all]   # grade a running server against the 9-scenario suite in benchmarks/
 #
 # Self-contained on purpose: when piped through `curl | bash`, there is no local checkout to reference sibling
 # files from, so every step lives in this one file. Prompts read from /dev/tty rather than stdin, because a
@@ -43,8 +38,6 @@ Other modes (pass flags through a pipe with `bash -s --`, otherwise bash reads t
   --force-download  re-download the model even if a same-size file exists
   --check           compare this install against the latest release
   --upgrade         reapply the current config + restart the server
-  --report-speed    measure real tokens/sec on a chip this kit only estimates for
-  --benchmark [id]  grade a running server against the 9-scenario suite (needs a git checkout)
 
 Modifiers:
   --yes             answer yes to EVERY prompt, including installing llama.cpp via brew
@@ -60,7 +53,6 @@ EOF
 MODE=install
 ASSUME_YES=0
 FORCE_DOWNLOAD=0
-BENCH_TARGET=all
 while [ $# -gt 0 ]; do
   case "$1" in
     --doctor) MODE=doctor ;;
@@ -70,12 +62,6 @@ while [ $# -gt 0 ]; do
     --selftest) MODE=selftest ;;
     --check) MODE=check ;;
     --upgrade) MODE=upgrade ;;
-    --report-speed) MODE=report-speed ;;
-    --benchmark)
-      MODE=benchmark
-      # optional positional scenario id/"all" right after the flag, e.g. `--benchmark cart-checkout`
-      if [ $# -ge 2 ] && [ "${2#-}" = "$2" ]; then BENCH_TARGET="$2"; shift; fi
-      ;;
     --yes) ASSUME_YES=1 ;;
     --force-download) FORCE_DOWNLOAD=1 ;;
     --help|-h) usage; exit 0 ;;
@@ -109,10 +95,6 @@ MAX_TOKENS=3072
 # completed in 245s instead of reaching only 11-12 turns in a 300s budget. The tradeoff is higher server RSS
 # (~11.2GB rather than ~8.8GB on the validation machine), which still fits the shipped 16GB target.
 SERVER_FLAGS=(-ngl 99 -fa on -c "$CTX" --no-warmup -np 1 --spec-type ngram-simple --reasoning off -ub 256 -b 256)
-# Pinned into config_sig deliberately: --spec-type ngram-simple's acceptance rate is prompt-dependent, so if
-# this text ever changed without a version bump, reports collected before and after the change would silently
-# describe two different measurements while claiming to be the same number.
-REPORT_PROMPT="Write a small TypeScript function that debounces another function by N milliseconds, plus one example call. Explain briefly."
 # Fetched by --check ONLY as a staleness beacon -- never sourced or executed, and never supplies a value this
 # script acts on (every constant above is still what actually runs). A compromised or lagging beacon can tell
 # you you're behind; it cannot change what your machine does.
@@ -121,11 +103,6 @@ VERSION_URL="https://raw.githubusercontent.com/megasoft1978/anvil-agent/main/VER
 # because some flags take a value (`-c 24576`) and checking that as one substring is more reliable than
 # checking `-c` and `24576` independently, which could each appear for unrelated reasons.
 CHECK_STRINGS=("-c $CTX" "-ngl 99" "-fa on" "-np 1" "--no-warmup" "--spec-type ngram-simple" "--reasoning off")
-
-# Only used by --benchmark, which needs a real git checkout (benchmarks/ is too large to embed in this
-# self-contained script) -- every other mode ignores these.
-SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)" || SCRIPT_DIR=""
-BENCH_DIR="$SCRIPT_DIR/benchmarks"
 
 DEST="$MODEL_DIR/$MODEL_FILE"
 INSTALL_ENV="$KIT_DIR/install.env"
@@ -175,7 +152,7 @@ json_field() {
 # config_sig is computed from the live constants, never hand-maintained, so it cannot drift from the code that
 # defines it. CI's version-sync job checks this against the repo's own VERSION file.
 config_sig() {
-  printf '%s\n' "$MODEL_FILE" "$MODEL_BYTES" "${SERVER_FLAGS[@]}" "$CTX" "$MAX_TOKENS" "$REPORT_PROMPT" \
+  printf '%s\n' "$MODEL_FILE" "$MODEL_BYTES" "${SERVER_FLAGS[@]}" "$CTX" "$MAX_TOKENS" \
     | shasum -a 256 | cut -c1-16
 }
 
@@ -207,49 +184,6 @@ hw_gate() {
     return 1
   fi
   return 0
-}
-
-# Published spec memory bandwidth per chip, GB/s -- used ONLY to scale a speed estimate, never presented as a
-# measurement. Multi-die variants (Pro/Max/Ultra) differ a lot; unrecognised chips fall back to M1's number,
-# which under-estimates anything newer rather than over-promising.
-chip_bandwidth() {
-  case "$1" in
-    "Apple M1")        echo 68  ;; "Apple M1 Pro") echo 200 ;; "Apple M1 Max") echo 400 ;; "Apple M1 Ultra") echo 800 ;;
-    "Apple M2")        echo 100 ;; "Apple M2 Pro") echo 200 ;; "Apple M2 Max") echo 400 ;; "Apple M2 Ultra") echo 800 ;;
-    "Apple M3")        echo 100 ;; "Apple M3 Pro") echo 150 ;; "Apple M3 Max") echo 400 ;;
-    "Apple M4")        echo 120 ;; "Apple M4 Pro") echo 273 ;; "Apple M4 Max") echo 546 ;;
-    *)                 echo 68  ;;
-  esac
-}
-
-# TPS_MEASURED is set (non-empty) only for chips this project has a real measurement for. Filling one in here
-# plus one README row is the entire workflow for accepting a community chip report (see README "Measured
-# chips" section) -- no other code path changes.
-chip_measured_tps() {
-  case "$1" in
-    # Mac mini M1 16GB, EXP-073 (research repo), the shipped 9-scenario/44-bug suite itself, not a synthetic
-    # micro-benchmark: mean tok/s across confirmed suite runs under this exact server config. The kit's own
-    # levers table (README "Levers measured") uses the same metric, so this number and that table agree --
-    # this was 23.6 before the -ub 256 -b 256 batch-size lever (EXP-073) raised shipped-config decode speed;
-    # update this value again if a future lever changes shipped-config speed, so it never goes stale like the
-    # very first version of this constant did (18.6, from a since-changed config, never reconciled here).
-    "Apple M1") echo 26.6 ;;
-    *)          echo ""   ;;
-  esac
-}
-
-speed_line() {  # prints the measured-or-estimated speed line for $CHIP; requires detect_hw to have run
-  local bw m1_bw=68 m1_tps=26.6 measured est
-  bw=$(chip_bandwidth "$CHIP")
-  measured=$(chip_measured_tps "$CHIP")
-  if [ -n "$measured" ]; then
-    echo "Speed target: ~${measured} tokens/sec -- MEASURED on this exact chip."
-  else
-    est=$(awk -v bw="$bw" -v m1bw="$m1_bw" -v m1tps="$m1_tps" 'BEGIN { printf "%.1f", (bw/m1bw)*m1tps }')
-    echo "Speed estimate: ~${est} tokens/sec -- ESTIMATED by scaling the M1's measured speed to this chip's"
-    echo "published memory bandwidth (${bw} vs M1's ${m1_bw} GB/s spec). NOT independently measured on this chip."
-    echo "Capacity (what fits, what OOMs) is expected to behave the same as M1 at 16GB; decode speed is not."
-  fi
 }
 
 free_disk_gb() {  # free space on the filesystem holding $1 (a directory, must already exist)
@@ -324,7 +258,6 @@ step_hw_gate() {
   detect_hw
   hw_gate || exit 1
   echo "Detected: $CHIP, ${MEM_GB}GB unified memory."
-  speed_line
 }
 
 step_prereqs() {
@@ -342,7 +275,7 @@ step_prereqs() {
     else echo "Skipped -- re-run after installing it." >&2; exit 1; fi
   fi
   if ! command -v node >/dev/null 2>&1; then
-    echo "node is required by this installer's own helper scripts (JSON parsing, speed measurement)." >&2
+    echo "node is required by this installer's own helper scripts (JSON parsing)." >&2
     echo "Install it first: brew install node" >&2
     exit 1
   fi
@@ -526,7 +459,6 @@ doctor() {
   else
     tag warn "free disk on $MODEL_DIR: ${free:-unknown}GB -- may not be enough for a fresh/re- download"
   fi
-  tag ok "$(speed_line | head -1)"
 
   echo
   echo "== Prerequisites =="
@@ -602,7 +534,7 @@ doctor() {
 }
 
 # ============================================================================================================
-# --selftest -- prints detect_hw + hw_gate + speed_line output and the gate's own exit code, then returns
+# --selftest -- prints detect_hw + hw_gate output and the gate's own exit code, then returns
 # WITHOUT installing anything. This is the only mode CI's hardware-detection tests exercise; it structurally
 # cannot download or boot a server.
 # ============================================================================================================
@@ -610,7 +542,6 @@ selftest() {
   detect_hw
   echo "chip=$CHIP mem_gb=$MEM_GB arch=$ARCH"
   if hw_gate; then
-    speed_line
     exit 0
   else
     exit 1
@@ -691,144 +622,6 @@ upgrade() {
 }
 
 # ============================================================================================================
-# --benchmark -- grades an already-running, already-validated server against the 9-scenario suite in
-# benchmarks/. Never boots a server itself (same division of responsibility as --doctor: measures what's
-# there, doesn't set it up). Needs a real git checkout, not the curl-pipe install, because the scenario data
-# and oracle test trees are too large to embed in this file -- see run_benchmark's own precondition check.
-# All prompt-construction, HTTP-calling and grading logic lives in benchmarks/bench.mjs and benchmarks/
-# grade.mjs, reusing the already-verified grader rather than duplicating it here in bash.
-# ============================================================================================================
-run_benchmark() {
-  if [ ! -f "$BENCH_DIR/grade.mjs" ] || [ ! -d "$BENCH_DIR/scenarios" ] || [ ! -d "$BENCH_DIR/oracle" ]; then
-    echo "--benchmark needs the full repo checkout, not the curl-pipe install." >&2
-    echo "Run: git clone https://github.com/megasoft1978/anvil-agent && cd anvil-agent && ./setup.sh --benchmark" >&2
-    exit 1
-  fi
-  local pid; pid=$(server_pid || true)
-  if [ -z "$pid" ] || ! server_health; then
-    echo "No validated server running on port $PORT. Start one first: setup.sh --start-only" >&2
-    exit 1
-  fi
-
-  echo "== anvil-agent benchmark: $BENCH_TARGET =="
-  node "$BENCH_DIR/bench.mjs" "$BENCH_TARGET" --port "$PORT" --max-tokens "$MAX_TOKENS" | node -e '
-    let fails = 0, warns = 0, totalPass = 0, totalBugs = 0, totalWall = 0, n = 0, totalTok = 0, genSecs = 0, accepted = [];
-    const tag = (kind, msg) => {
-      const label = { ok: "[ ok ] ", warn: "[warn] ", fail: "[fail] ", skip: "[skip] " }[kind];
-      console.log(label + msg);
-      if (kind === "fail") fails++;
-      if (kind === "warn") warns++;
-    };
-    process.stdin.setEncoding("utf8");
-    let buf = "";
-    process.stdin.on("data", (d) => {
-      buf += d;
-      let i;
-      while ((i = buf.indexOf("\n")) >= 0) {
-        const line = buf.slice(0, i); buf = buf.slice(i + 1);
-        if (!line.trim()) continue;
-        const r = JSON.parse(line);
-        n++;
-        if (r.verdict === "skip") { tag("skip", `${r.scenario}: ${r.detail}`); continue; }
-        if (r.verdict === "timeout") { tag("fail", `${r.scenario}: timed out waiting for a response`); continue; }
-        if (r.verdict === "empty-reasoning") { tag("warn", `${r.scenario}: reasoning channel non-empty, content empty (in ${r.wall_s}s)`); continue; }
-        if (r.verdict === "error") { tag("fail", `${r.scenario}: ${r.detail}`); continue; }
-        totalPass += r.pass; totalBugs += r.total; totalWall += r.wall_s;
-        const pct = Math.round((r.pass / r.total) * 100);
-        let speed = "";
-        if (r.tps) {
-          speed = `, ${r.tps.toFixed(1)} tok/s`;
-          if (r.completion_tokens) { totalTok += r.completion_tokens; genSecs += r.completion_tokens / r.tps; }
-          if (r.draft_accept != null) { speed += `, ${Math.round(r.draft_accept * 100)}% draft accepted`; accepted.push(r.draft_accept); }
-        }
-        const line2 = `${r.scenario}: ${r.pass}/${r.total} (${pct}%) in ${r.wall_s.toFixed(1)}s${speed}`;
-        if (r.pass === r.total) tag("ok", line2);
-        else if (r.pass > 0) tag("warn", line2);
-        else tag("fail", line2);
-      }
-    });
-    process.stdin.on("end", () => {
-      if (totalBugs > 0) {
-        const pct = Math.round((totalPass / totalBugs) * 100);
-        let speed = "";
-        if (genSecs > 0) speed = `, ${(totalTok / genSecs).toFixed(1)} tok/s generation over ${totalTok} tokens`;
-        if (accepted.length) speed += `, ${Math.round(accepted.reduce((a, b) => a + b, 0) / accepted.length * 100)}% mean draft acceptance`;
-        console.log(`\n== benchmark: ${totalPass}/${totalBugs} (${pct}%) across ${n} scenario(s), ${totalWall.toFixed(1)}s wall${speed} ==`);
-        console.log("(vs. the published baseline table in README.md -- exact match is not expected; temperature-0 determinism only guarantees a given server build reproduces itself)");
-      }
-      process.exit(fails > 0 ? 1 : warns > 0 ? 2 : 0);
-    });
-  '
-}
-
-# ============================================================================================================
-# --report-speed -- measures real tokens/sec on chips this kit currently only estimates for, and prints a
-# pre-filled GitHub issue link (never opened automatically -- the report is shown in full in the terminal
-# first; this kit never phones home on its own). Accepting a report is then a one-line diff: fill in
-# chip_measured_tps() and one README row, no other code path changes.
-# ============================================================================================================
-# Prints tokens/sec for one REPORT_PROMPT completion, or "0" if it couldn't measure. The request and the
-# timing both live in one node process: llama-server's own `timings.predicted_per_second` (pure generation
-# rate, prompt processing excluded) is preferred, with a millisecond wall-clock fallback. Whole-second `date`
-# timing was rejected -- on the fast chips this exists to measure, 256 tokens finish in ~2s, where rounding to
-# a whole second is a 30-50% error.
-timed_completion() {
-  REPORT_PROMPT="$REPORT_PROMPT" PORT="$PORT" node -e '
-    const t0 = performance.now();
-    fetch("http://127.0.0.1:" + process.env.PORT + "/v1/chat/completions", {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ messages: [{ role: "user", content: process.env.REPORT_PROMPT }], max_tokens: 256, temperature: 0 }),
-      signal: AbortSignal.timeout(120_000),
-    }).then(async (r) => {
-      const j = await r.json();
-      const wall = (performance.now() - t0) / 1000;
-      const fromServer = j && j.timings && Number(j.timings.predicted_per_second);
-      const tok = j && j.usage && Number(j.usage.completion_tokens);
-      const tps = fromServer > 0 ? fromServer : (tok > 0 && wall > 0 ? tok / wall : 0);
-      process.stdout.write(tps > 0 ? tps.toFixed(1) : "0");
-    }).catch(() => process.stdout.write("0"));
-  '
-}
-
-report_speed() {
-  echo "== anvil-agent chip speed report =="
-  local pid; pid=$(server_pid || true)
-  if [ -z "$pid" ] || ! server_health; then
-    echo "No validated server running on port $PORT. Start one first: setup.sh --start-only" >&2
-    exit 1
-  fi
-  detect_hw
-  if [ -n "$(chip_measured_tps "$CHIP")" ]; then
-    echo "$CHIP already has a measured number in this kit ($(chip_measured_tps "$CHIP") tokens/sec) -- no report needed."
-    exit 0
-  fi
-  echo "Chip: $CHIP (currently only an ESTIMATE in this kit)"
-  echo "Running two timed completions -- the first pays a cold mmap-page-in cost, the second is the real number."
-  local tps1 tps2
-  tps1=$(timed_completion)
-  tps2=$(timed_completion)
-  echo
-  echo "First run:  ${tps1} tokens/sec"
-  echo "Second run: ${tps2} tokens/sec  <- this is the number to report"
-  if [ "$tps2" = "0" ]; then
-    echo
-    echo "Could not get a usable measurement (empty or malformed completion). Try again, or report by hand." >&2
-    exit 1
-  fi
-  echo
-  echo "To contribute this measurement, open an issue with these fields pre-filled (nothing is sent automatically):"
-  REPORT_CHIP="$CHIP" REPORT_MAC="$(sw_vers -productVersion 2>/dev/null || true)" REPORT_TPS="$tps2" node -e '
-    const params = new URLSearchParams({
-      template: "chip-report.yml",
-      chip: process.env.REPORT_CHIP || "",
-      macos_version: process.env.REPORT_MAC || "",
-      measured_tps: process.env.REPORT_TPS || "",
-    });
-    console.log("https://github.com/megasoft1978/anvil-agent/issues/new?" + params.toString());
-  '
-}
-
-# ============================================================================================================
 # Dispatch
 # ============================================================================================================
 case "$MODE" in
@@ -865,15 +658,8 @@ case "$MODE" in
     doctor
     exit $?
     ;;
-  benchmark)
-    run_benchmark
-    exit $?
-    ;;
   check)
     check
-    ;;
-  report-speed)
-    report_speed
     ;;
   upgrade)
     upgrade

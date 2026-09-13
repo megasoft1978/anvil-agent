@@ -60,7 +60,6 @@ jobs:
             node --check "$f" || { echo "SYNTAX ERROR in $f"; fail=1; }
           done
           node --check benchmarks/grade.mjs
-          node --check benchmarks/bench.mjs
           exit $fail
 
   selftest:
@@ -90,19 +89,6 @@ jobs:
           if ANVIL_KIT_SELFTEST=1 ANVIL_KIT_FAKE_MEMBYTES=8589934592 ./setup.sh --selftest; then
             echo "expected refusal under 16GB, got success"; exit 1
           fi
-      - name: M1 shows MEASURED
-        run: |
-          out=$(ANVIL_KIT_SELFTEST=1 ANVIL_KIT_FAKE_CHIP="Apple M1" ANVIL_KIT_FAKE_MEMBYTES=17179869184 ./setup.sh --selftest)
-          echo "$out" | grep -q "MEASURED" || { echo "expected MEASURED for M1, got: $out"; exit 1; }
-      - name: M4 Max shows a correctly-scaled ESTIMATE
-        run: |
-          out=$(ANVIL_KIT_SELFTEST=1 ANVIL_KIT_FAKE_CHIP="Apple M4 Max" ANVIL_KIT_FAKE_MEMBYTES=68719476736 ./setup.sh --selftest)
-          echo "$out" | grep -q "213.6" || { echo "expected 213.6 t/s estimate for M4 Max, got: $out"; exit 1; }
-      - name: unknown chip falls back to M1 bandwidth but still says ESTIMATE
-        run: |
-          out=$(ANVIL_KIT_SELFTEST=1 ANVIL_KIT_FAKE_CHIP="Apple M99 Ultra Pro" ANVIL_KIT_FAKE_MEMBYTES=17179869184 ./setup.sh --selftest)
-          echo "$out" | grep -q "ESTIMATED" || { echo "expected ESTIMATED for unknown chip, got: $out"; exit 1; }
-          echo "$out" | grep -q "26.6" || { echo "expected M1-bandwidth-derived 26.6 t/s for unknown chip, got: $out"; exit 1; }
       - name: no-tty declines rather than hangs
         run: |
           # A fresh macos-latest runner has no llama-server, so install mode (with the 7GB runner's memory
