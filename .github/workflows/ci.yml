@@ -5,6 +5,28 @@ on:
   pull_request:
 
 jobs:
+  go-agent:
+    env:
+      ANVIL_LIVE: "0"
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: go-agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go-agent/go.mod
+          cache: false
+      - run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - run: go test -race -coverprofile=coverage.out ./...
+      - run: go test -run '^$' -fuzz '^FuzzLeakedMarkupRecovery$' -fuzztime=10s -parallel=2
+      - run: go build -o /tmp/anvil-agent .
+
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -44,8 +66,8 @@ jobs:
   selftest:
     # macos-latest runners are Apple Silicon but ship with only 7GB of RAM, so the real hardware gate correctly
     # REFUSES them -- that refusal is asserted as such below, and the happy path is reached by faking only the
-    # memory size (GEMMA4_KIT_SELFTEST must be set before any FAKE_* value has an effect). selftest mode
-    # structurally cannot download, boot a server, write config, or exec pi, so this is safe unattended.
+    # memory size (ANVIL_KIT_SELFTEST must be set before any FAKE_* value has an effect). selftest mode
+    # structurally cannot download or boot a server, so this is safe unattended.
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -57,43 +79,42 @@ jobs:
           [ "$code" = 1 ] || { echo "expected exit 1 (refused), got $code"; exit 1; }
           echo "$out" | grep -q "needs 16GB" || { echo "expected the memory refusal message"; exit 1; }
       - name: real chip + faked 16GB passes the gate
-        run: GEMMA4_KIT_SELFTEST=1 GEMMA4_KIT_FAKE_MEMBYTES=17179869184 ./setup.sh --selftest
+        run: ANVIL_KIT_SELFTEST=1 ANVIL_KIT_FAKE_MEMBYTES=17179869184 ./setup.sh --selftest
       - name: non-Apple-Silicon refusal
         run: |
-          if GEMMA4_KIT_SELFTEST=1 GEMMA4_KIT_FAKE_ARCH=x86_64 GEMMA4_KIT_FAKE_CHIP="" ./setup.sh --selftest; then
+          if ANVIL_KIT_SELFTEST=1 ANVIL_KIT_FAKE_ARCH=x86_64 ANVIL_KIT_FAKE_CHIP="" ./setup.sh --selftest; then
             echo "expected refusal on non-arm64, got success"; exit 1
           fi
       - name: under-16GB refusal
         run: |
-          if GEMMA4_KIT_SELFTEST=1 GEMMA4_KIT_FAKE_MEMBYTES=8589934592 ./setup.sh --selftest; then
+          if ANVIL_KIT_SELFTEST=1 ANVIL_KIT_FAKE_MEMBYTES=8589934592 ./setup.sh --selftest; then
             echo "expected refusal under 16GB, got success"; exit 1
           fi
       - name: M1 shows MEASURED
         run: |
-          out=$(GEMMA4_KIT_SELFTEST=1 GEMMA4_KIT_FAKE_CHIP="Apple M1" GEMMA4_KIT_FAKE_MEMBYTES=17179869184 ./setup.sh --selftest)
+          out=$(ANVIL_KIT_SELFTEST=1 ANVIL_KIT_FAKE_CHIP="Apple M1" ANVIL_KIT_FAKE_MEMBYTES=17179869184 ./setup.sh --selftest)
           echo "$out" | grep -q "MEASURED" || { echo "expected MEASURED for M1, got: $out"; exit 1; }
       - name: M4 Max shows a correctly-scaled ESTIMATE
         run: |
-          out=$(GEMMA4_KIT_SELFTEST=1 GEMMA4_KIT_FAKE_CHIP="Apple M4 Max" GEMMA4_KIT_FAKE_MEMBYTES=68719476736 ./setup.sh --selftest)
+          out=$(ANVIL_KIT_SELFTEST=1 ANVIL_KIT_FAKE_CHIP="Apple M4 Max" ANVIL_KIT_FAKE_MEMBYTES=68719476736 ./setup.sh --selftest)
           echo "$out" | grep -q "213.6" || { echo "expected 213.6 t/s estimate for M4 Max, got: $out"; exit 1; }
       - name: unknown chip falls back to M1 bandwidth but still says ESTIMATE
         run: |
-          out=$(GEMMA4_KIT_SELFTEST=1 GEMMA4_KIT_FAKE_CHIP="Apple M99 Ultra Pro" GEMMA4_KIT_FAKE_MEMBYTES=17179869184 ./setup.sh --selftest)
+          out=$(ANVIL_KIT_SELFTEST=1 ANVIL_KIT_FAKE_CHIP="Apple M99 Ultra Pro" ANVIL_KIT_FAKE_MEMBYTES=17179869184 ./setup.sh --selftest)
           echo "$out" | grep -q "ESTIMATED" || { echo "expected ESTIMATED for unknown chip, got: $out"; exit 1; }
           echo "$out" | grep -q "26.6" || { echo "expected M1-bandwidth-derived 26.6 t/s for unknown chip, got: $out"; exit 1; }
       - name: no-tty declines rather than hangs
         run: |
-          # A fresh macos-latest runner has neither llama-server nor pi, so install mode (with the 7GB runner's
-          # memory faked past the gate) reaches step_prereqs's ask() prompt. </dev/null closes stdin and CI has
-          # no controlling tty either, so ask() must hit its third branch and decline instead of blocking
+          # A fresh macos-latest runner has no llama-server, so install mode (with the 7GB runner's memory
+          # faked past the gate) reaches step_prereqs's ask() prompt. </dev/null closes stdin and CI has no
+          # controlling tty either, so ask() must hit its third branch and decline instead of blocking
           # forever. perl's alarm is the watchdog because GNU `timeout` isn't in macOS's base system.
-          out=$(GEMMA4_KIT_SELFTEST=1 GEMMA4_KIT_FAKE_MEMBYTES=17179869184 \
+          out=$(ANVIL_KIT_SELFTEST=1 ANVIL_KIT_FAKE_MEMBYTES=17179869184 \
                 perl -e 'alarm shift; exec @ARGV' 60 ./setup.sh < /dev/null 2>&1) && code=0 || code=$?
           echo "$out"
           echo "$out" | grep -q "no terminal available" || { echo "expected the no-terminal message"; exit 1; }
           [ "$code" = 1 ] || { echo "expected exit 1 (declined), got $code"; exit 1; }
           command -v llama-server && { echo "selftest must never install anything"; exit 1; }
-          command -v pi && { echo "selftest must never install anything"; exit 1; }
           exit 0
 
   version-sync:

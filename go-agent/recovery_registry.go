@@ -20,7 +20,7 @@ type recoverer struct {
 }
 
 var recoverers = []recoverer{
-	{name: "gemma_markup", detect: hasMarkers, parse: gemmaRecoverParse, useAllowed: false},
+	{name: "leaked_markup", detect: hasMarkers, parse: leakedMarkupRecoverParse, useAllowed: false},
 	{name: "xml_attr", detect: xmlAttrDetect, parse: xmlAttrParse, useAllowed: true},
 	{name: "json_fence", detect: jsonFenceDetect, parse: jsonFenceParse, useAllowed: true},
 }

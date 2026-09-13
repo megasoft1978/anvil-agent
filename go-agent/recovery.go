@@ -24,11 +24,11 @@ func hasMarkers(text string) bool {
 	return false
 }
 
-// gemmaRecoverParse adapts recoverCall to the recoverer.parse shape: it ignores allowed
-// (the Gemma dialect is never allowlist-checked; see TestObservedGemma4ParserRegressions,
+// leakedMarkupRecoverParse adapts recoverCall to the recoverer.parse shape: it ignores allowed
+// (the leaked-markup dialect is never allowlist-checked; see TestObservedLeakedMarkupParserRegressions,
 // which fixtures a recovered call named "done" that is not a declared tool) and returns
 // at most one call, matching recoverCall's own single-call contract.
-func gemmaRecoverParse(text string, allowed map[string]bool) ([]ToolCall, error) {
+func leakedMarkupRecoverParse(text string, allowed map[string]bool) ([]ToolCall, error) {
 	call, err := recoverCall(text)
 	if err != nil || call == nil {
 		return nil, err
@@ -53,24 +53,24 @@ func recoverCall(texts ...string) (*ToolCall, error) {
 			case strings.HasPrefix(text, ":"):
 				text = text[1:]
 			default:
-				return nil, fmt.Errorf("unrecognized Gemma tool opener")
+				return nil, fmt.Errorf("unrecognized leaked-markup tool opener")
 			}
 			brace := strings.IndexByte(text, '{')
 			if brace < 0 {
-				return nil, fmt.Errorf("incomplete Gemma tool call")
+				return nil, fmt.Errorf("incomplete leaked-markup tool call")
 			}
 			name := strings.TrimSpace(text[:brace])
 			if !namePattern.MatchString(name) {
-				return nil, fmt.Errorf("invalid Gemma tool name")
+				return nil, fmt.Errorf("invalid leaked-markup tool name")
 			}
-			p := gemmaParser{text: text, pos: brace}
+			p := leakedMarkupParser{text: text, pos: brace}
 			value, err := p.value(0)
 			if err != nil {
 				return nil, err
 			}
 			p.space()
 			if !strings.HasPrefix(text[p.pos:], callClose) {
-				return nil, fmt.Errorf("missing Gemma tool closer")
+				return nil, fmt.Errorf("missing leaked-markup tool closer")
 			}
 			args, err := json.Marshal(value)
 			if err != nil {
@@ -87,26 +87,26 @@ func recoverCall(texts ...string) (*ToolCall, error) {
 	return recovered, nil
 }
 
-type gemmaParser struct {
+type leakedMarkupParser struct {
 	text string
 	pos  int
 }
 
-func (p *gemmaParser) space() {
+func (p *leakedMarkupParser) space() {
 	for p.pos < len(p.text) && unicode.IsSpace(rune(p.text[p.pos])) {
 		p.pos++
 	}
 }
-func (p *gemmaParser) value(depth int) (any, error) {
+func (p *leakedMarkupParser) value(depth int) (any, error) {
 	p.space()
 	if depth > 64 || p.pos >= len(p.text) {
-		return nil, fmt.Errorf("incomplete or deeply nested Gemma value")
+		return nil, fmt.Errorf("incomplete or deeply nested leaked-markup value")
 	}
 	if strings.HasPrefix(p.text[p.pos:], stringMarker) {
 		p.pos += len(stringMarker)
 		end := strings.Index(p.text[p.pos:], stringMarker)
 		if end < 0 {
-			return nil, fmt.Errorf("unterminated Gemma string")
+			return nil, fmt.Errorf("unterminated leaked-markup string")
 		}
 		value := p.text[p.pos : p.pos+end]
 		p.pos += end + len(stringMarker)
@@ -128,14 +128,14 @@ func (p *gemmaParser) value(depth int) (any, error) {
 				p.pos++
 			}
 			if p.pos >= len(p.text) || p.text[p.pos] != ':' {
-				return nil, fmt.Errorf("invalid Gemma object key")
+				return nil, fmt.Errorf("invalid leaked-markup object key")
 			}
 			key := strings.TrimSpace(p.text[start:p.pos])
 			if key == "" {
-				return nil, fmt.Errorf("empty Gemma object key")
+				return nil, fmt.Errorf("empty leaked-markup object key")
 			}
 			if _, exists := result[key]; exists {
-				return nil, fmt.Errorf("duplicate Gemma object key")
+				return nil, fmt.Errorf("duplicate leaked-markup object key")
 			}
 			p.pos++
 			value, err := p.value(depth + 1)
@@ -145,7 +145,7 @@ func (p *gemmaParser) value(depth int) (any, error) {
 			result[key] = value
 			p.space()
 			if p.pos >= len(p.text) {
-				return nil, fmt.Errorf("unterminated Gemma object")
+				return nil, fmt.Errorf("unterminated leaked-markup object")
 			}
 			ch := p.text[p.pos]
 			p.pos++
@@ -153,7 +153,7 @@ func (p *gemmaParser) value(depth int) (any, error) {
 				return result, nil
 			}
 			if ch != ',' {
-				return nil, fmt.Errorf("invalid Gemma object separator")
+				return nil, fmt.Errorf("invalid leaked-markup object separator")
 			}
 		}
 	case '[':
@@ -172,7 +172,7 @@ func (p *gemmaParser) value(depth int) (any, error) {
 			result = append(result, value)
 			p.space()
 			if p.pos >= len(p.text) {
-				return nil, fmt.Errorf("unterminated Gemma array")
+				return nil, fmt.Errorf("unterminated leaked-markup array")
 			}
 			ch := p.text[p.pos]
 			p.pos++
@@ -180,7 +180,7 @@ func (p *gemmaParser) value(depth int) (any, error) {
 				return result, nil
 			}
 			if ch != ',' {
-				return nil, fmt.Errorf("invalid Gemma array separator")
+				return nil, fmt.Errorf("invalid leaked-markup array separator")
 			}
 		}
 	default:
@@ -188,7 +188,7 @@ func (p *gemmaParser) value(depth int) (any, error) {
 		decoder.UseNumber()
 		var value any
 		if err := decoder.Decode(&value); err != nil {
-			return nil, fmt.Errorf("invalid Gemma scalar: %w", err)
+			return nil, fmt.Errorf("invalid leaked-markup scalar: %w", err)
 		}
 		p.pos += int(decoder.InputOffset())
 		return value, nil

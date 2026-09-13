@@ -53,6 +53,7 @@ type Request struct {
 	Stream          bool             `json:"stream"`
 	Temperature     float64          `json:"temperature"`
 	MaxTokens       int              `json:"max_tokens"`
+	CachePrompt     bool             `json:"cache_prompt"`
 }
 
 type Response struct {

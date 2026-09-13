@@ -1,22 +1,20 @@
 #!/usr/bin/env bash
-# Gemma-4 coding kit — one command, no clone.
+# anvil-agent — one command, no clone.
 #
-#   curl -fsSL https://raw.githubusercontent.com/megasoft1978/gemma4-coding-kit/main/setup.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/megasoft1978/anvil-agent/main/setup.sh | bash
 #
 # Other modes (note the `bash -s --` needed once you pass a flag through a pipe -- without it, bash parses
 # `--doctor` as its own flag rather than the script's):
 #
 #   curl -fsSL <raw>/setup.sh | bash -s -- --doctor        # diagnose an existing install, read-only
-#   curl -fsSL <raw>/setup.sh | bash -s -- --config-only    # rewrite pi's config + AGENTS.md, no download/boot
 #   curl -fsSL <raw>/setup.sh | bash -s -- --start-only     # (re)start the server with the validated flags
 #   curl -fsSL <raw>/setup.sh | bash -s -- --force-download # re-download the model even if a same-size file exists
 #   curl -fsSL <raw>/setup.sh | bash -s -- --check           # compare this install against the latest release
 #   curl -fsSL <raw>/setup.sh | bash -s -- --upgrade         # reapply current config + restart the server
 #   curl -fsSL <raw>/setup.sh | bash -s -- --report-speed    # measure real tokens/sec on an estimate-only chip
 #
-# Modifiers: --yes answers yes to EVERY prompt, including "install llama.cpp / pi now?" (brew/npm) -- it is
-# explicit consent for an unattended install, so only pass it when that is what you want. --no-exec sets up
-# everything but doesn't start the interactive pi session at the end.
+# Modifiers: --yes answers yes to EVERY prompt, including "install llama.cpp now?" (brew) -- it is explicit
+# consent for an unattended install, so only pass it when that is what you want.
 #
 # One mode needs a real git checkout, not the curl-pipe install, because it has data too large to embed here:
 #
@@ -34,14 +32,13 @@ set -euo pipefail
 # /bin/bash itself, so there is no source file to read.
 usage() {
   cat << 'EOF'
-gemma4-coding-kit -- Gemma-4-26B-A4B as a local coding assistant on a 16GB Apple Silicon Mac.
+anvil-agent -- Qwen3.6-35B-A3B as a local coding assistant on a 16GB Apple Silicon Mac.
 
-  curl -fsSL https://raw.githubusercontent.com/megasoft1978/gemma4-coding-kit/main/setup.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/megasoft1978/anvil-agent/main/setup.sh | bash
 
 Other modes (pass flags through a pipe with `bash -s --`, otherwise bash reads them as its own):
 
   --doctor          diagnose an existing install, read-only
-  --config-only     rewrite pi's config + AGENTS.md, no download/boot
   --start-only      (re)start the server with the validated flags
   --force-download  re-download the model even if a same-size file exists
   --check           compare this install against the latest release
@@ -50,8 +47,7 @@ Other modes (pass flags through a pipe with `bash -s --`, otherwise bash reads t
   --benchmark [id]  grade a running server against the 9-scenario suite (needs a git checkout)
 
 Modifiers:
-  --yes             answer yes to EVERY prompt, including installing llama.cpp / pi via brew / npm
-  --no-exec         set everything up but don't start the interactive pi session at the end
+  --yes             answer yes to EVERY prompt, including installing llama.cpp via brew
 
 Details and the numbers behind every setting: README.md in the repo.
 EOF
@@ -62,14 +58,12 @@ EOF
 # (--print-sig, --help) can run with zero side effects, including on Linux CI runners.
 # ============================================================================================================
 MODE=install
-NO_EXEC=0
 ASSUME_YES=0
 FORCE_DOWNLOAD=0
 BENCH_TARGET=all
 while [ $# -gt 0 ]; do
   case "$1" in
     --doctor) MODE=doctor ;;
-    --config-only) MODE=config-only ;;
     --start-only) MODE=start-only ;;
     --print-sig) MODE=print-sig ;;
     --print-node-snippets) MODE=print-node-snippets ;;
@@ -82,7 +76,6 @@ while [ $# -gt 0 ]; do
       # optional positional scenario id/"all" right after the flag, e.g. `--benchmark cart-checkout`
       if [ $# -ge 2 ] && [ "${2#-}" = "$2" ]; then BENCH_TARGET="$2"; shift; fi
       ;;
-    --no-exec) NO_EXEC=1 ;;
     --yes) ASSUME_YES=1 ;;
     --force-download) FORCE_DOWNLOAD=1 ;;
     --help|-h) usage; exit 0 ;;
@@ -100,35 +93,29 @@ done
 # element-by-element (doctor's flag-drift check) and hashed as a whole (config_sig).
 # ============================================================================================================
 KIT_VERSION="2026.09.15"
-KIT_DIR="$HOME/.gemma4-coding-kit"
+KIT_DIR="$HOME/.anvil-agent"
 MODEL_DIR="$KIT_DIR/models"
 PORT=8114
-MODEL_REPO="unsloth/gemma-4-26B-A4B-it-GGUF"
-MODEL_FILE="gemma-4-26B-A4B-it-UD-IQ2_M.gguf"
-MODEL_BYTES=10014755296
+MODEL_REPO="unsloth/Qwen3.6-35B-A3B-GGUF"
+MODEL_FILE="Qwen3.6-35B-A3B-UD-IQ2_M.gguf"
+MODEL_BYTES=11522702304
 MODEL_MIN_FREE_GB=12   # model size plus headroom, checked before downloading
-PROVIDER_KEY="gemma4-kit"
-MODEL_ID="gemma4"
+MODEL_ID="qwen36-35b-a3b"
 CTX=24576
 MAX_TOKENS=3072
-COMPACT_RESERVE=3072
-COMPACT_KEEP=6000
-# No --cache-reuse: on Gemma 4's sliding-window-attention context llama-server logs "cache_reuse is not
-# supported by this context, it will be disabled" -- the flag was a silent no-op. The 100x repeat-prompt TTFT
-# win the kit relies on comes from llama-server's automatic prefix caching, which needs no flag at all
-# (measured: 1262-token prompt 7376ms cold, 71ms on repeat with cache_n=1262).
-# --ctx-checkpoints 0 --cache-ram 0: llama-server's defaults (32 context checkpoints + an 8GiB RAM prompt
-# cache) are what was growing dirty memory to ~4.8GB over a long session -- not the KV cache, which is a fixed
-# 780MB on this model (25 of 30 layers use a 1024-token sliding window). Turning both off measured 4.87GB ->
-# 1.02GB peak dirty footprint with no change in generation speed or benchmark score (7-scenario suite, same
-# server binary, --benchmark all). The cost: a mid-conversation edit earlier than your last message forces a
-# full prompt re-process instead of a partial one -- rare in a single-topic coding session, and --doctor will
-# tell you if you ever want to trade some of that memory back for it (raise --ctx-checkpoints).
-# -ub 256 -b 256: shrinks the prefill compute buffer from llama-server's default (ubatch 512). Measured
-# 1023MB -> 963MB peak dirty footprint (2 confirmed runs, identical both times), byte-identical benchmark
-# score and flat-to-slightly-faster decode speed (9-scenario suite). Safe here because these scenarios'
-# prompts are short enough that a smaller prefill batch doesn't become the bottleneck.
-SERVER_FLAGS=(-ngl 99 -fa on -c "$CTX" --no-warmup -np 1 --spec-type ngram-simple --reasoning off --ctx-checkpoints 0 --cache-ram 0 -ub 256 -b 256)
+# These flags are carried over from prior tuning and have not been fully re-validated against this model --
+# treat them as a starting point, not a measured-correct config, until someone re-runs --benchmark against it.
+# One exception, confirmed live 2026-09-12: `--ctx-checkpoints 0 --cache-ram 0` measured a real memory win on
+# the old target model with "no change in generation speed" there, but on Qwen3.6-35B-A3B it causes llama-server
+# to periodically discard its ENTIRE prompt-prefix cache instead of extending it incrementally -- confirmed via
+# the server's own `timings.cache_n` per request: with these flags, a real 11-turn agentic run hit two full
+# re-prefills (one on an 8801-token accumulated conversation, costing 81 real seconds by itself, more than a
+# quarter of a 300s budget); with them removed, the identical task's cache_n grew monotonically for all 16
+# turns with zero resets, and the run covered 16 turns in 245s instead of 11-12 turns in the full 300s. Real
+# memory cost of removing them: server RSS grew from ~8.8GB to ~11.2GB over a longer 16-turn conversation on
+# this same box -- still fits in 16GB, but leaves less headroom for other apps than the old flags did. Do not
+# reintroduce these two flags without re-measuring cache_n behavior on whatever model is current at the time.
+SERVER_FLAGS=(-ngl 99 -fa on -c "$CTX" --no-warmup -np 1 --spec-type ngram-simple --reasoning off -ub 256 -b 256)
 # Pinned into config_sig deliberately: --spec-type ngram-simple's acceptance rate is prompt-dependent, so if
 # this text ever changed without a version bump, reports collected before and after the change would silently
 # describe two different measurements while claiming to be the same number.
@@ -136,25 +123,11 @@ REPORT_PROMPT="Write a small TypeScript function that debounces another function
 # Fetched by --check ONLY as a staleness beacon -- never sourced or executed, and never supplies a value this
 # script acts on (every constant above is still what actually runs). A compromised or lagging beacon can tell
 # you you're behind; it cannot change what your machine does.
-VERSION_URL="https://raw.githubusercontent.com/megasoft1978/gemma4-coding-kit/main/VERSION"
-# Two client-side `pi` extensions, added after a real-repo probe (EXP-077, research repo) found this model
-# stalls or malforms tool calls on realistic multi-step tasks -- something the kit's own single-shot benchmark
-# suite can't surface. Neither touches the server or SERVER_FLAGS, so neither is part of config_sig.
-#   1. gemma4-tool-recovery.ts (this repo, pi-extensions/): llama.cpp's Gemma-4 tool-call format uses native
-#      tokens (<|tool_call>call:name{...}<tool_call|>), a fragile, actively-churning parser path (llama.cpp
-#      #22786, #21375, #21316) -- a decoding hiccup leaks a malformed fragment instead of a real call, silently,
-#      with no error. This extension recovers a COMPLETE leaked call when one is parseable, and otherwise
-#      injects one corrective retry turn, capped at 2 in a row.
-#   2. pi-anti-doom-loop (npm, https://github.com/irfndi/pi-anti-doom-loop, MIT, reviewed before adding):
-#      blocks identical repeated tool calls before they burn the whole turn budget -- measured directly to
-#      convert a silent 10-minute timeout into a clean ~7-minute finish on the same real task (EXP-077 follow-up).
-PI_EXTENSION_URL="https://raw.githubusercontent.com/megasoft1978/gemma4-coding-kit/main/pi-extensions/gemma4-tool-recovery.ts"
-PI_EXTENSION_FILE="gemma4-tool-recovery.ts"
-PI_ANTI_LOOP_PACKAGE="npm:pi-anti-doom-loop"
+VERSION_URL="https://raw.githubusercontent.com/megasoft1978/anvil-agent/main/VERSION"
 # Substrings doctor checks for in the running server's own command line -- kept separate from SERVER_FLAGS
 # because some flags take a value (`-c 24576`) and checking that as one substring is more reliable than
 # checking `-c` and `24576` independently, which could each appear for unrelated reasons.
-CHECK_STRINGS=("-c $CTX" "-ngl 99" "-fa on" "-np 1" "--no-warmup" "--spec-type ngram-simple" "--reasoning off" "--ctx-checkpoints 0" "--cache-ram 0")
+CHECK_STRINGS=("-c $CTX" "-ngl 99" "-fa on" "-np 1" "--no-warmup" "--spec-type ngram-simple" "--reasoning off")
 
 # Only used by --benchmark, which needs a real git checkout (benchmarks/ is too large to embed in this
 # self-contained script) -- every other mode ignores these.
@@ -163,60 +136,6 @@ BENCH_DIR="$SCRIPT_DIR/benchmarks"
 
 DEST="$MODEL_DIR/$MODEL_FILE"
 INSTALL_ENV="$KIT_DIR/install.env"
-AGENTS_LIST="$KIT_DIR/agents-md.list"
-AGENTS_MARKER="<!-- gemma4-coding-kit v${KIT_VERSION} -- generated by setup.sh; safe to edit, uninstall.sh will then leave it alone -->"
-
-AGENTS_MD_BODY=$(cat << 'EOF'
-# Working with Gemma-4-26B-A4B
-
-This project is configured to talk to a local Gemma-4-26B-A4B model. Its measured strengths and weaknesses on
-this hardware are specific enough to change how you should ask it for things.
-
-## Scope every request
-
-This model was measured (independently, in AgentFloor arXiv 2605.00334, and reproduced directly against this
-exact setup) at 96% success on a single tool call, 72% on a two-step chain, and 0% on open-ended "find every
-bug in this project" requests -- one such request made 143, then 247 tool-call rounds and edited nothing.
-
-Ask it to look at a named file, or fix a named symptom. Don't ask it to review a whole project unaided.
-
-## Prefer whole-file rewrites
-
-Diffs and line-numbered patches measurably fail more often at this model's scale than "rewrite the whole file
-correctly." When asking for a fix, ask for the complete corrected file, not a patch.
-
-## Use a defect checklist for unaided bug-finding
-
-If you do need it to find problems without pointing at them, handing it a short checklist of defect
-categories (mutation of shared state, unhandled async rejection, contract mismatches across a boundary, stale
-closures, resource leaks, off-by-one/timezone/float-money errors, missing state resets, missing authorization
-checks) measurably helps -- the single largest quality lever measured on this model, +17 points on unaided
-discovery in this session's own testing.
-
-## Never enable reasoning/thinking mode
-
-Measured directly: with thinking enabled, this model produced 46,615 characters of internal reasoning and a
-completely empty final answer, even given 24k tokens of context and a 16k-token output ceiling. This kit
-disables it (`reasoning: false`) for that reason -- don't turn it back on for coding tasks.
-
-## Always end with an edit, not just a diagnosis
-
-A real-repo probe (research repo EXP-077: 3 non-interactive runs against a real, historically-sourced bug, no
-files pre-selected) found this model's dominant failure mode isn't wrong reasoning -- in 2 of 3 runs it
-correctly localized the exact file and root cause via its own tool use, then the turn ended with no edit ever
-applied: one run added a test but never touched the buggy file; another wrote a debug script that correctly
-diagnosed the bug, then ran out of turns before editing anything. Synthetic single-file benchmarks (this kit's
-own included) don't surface this, because they never require more than a couple of tool calls chained
-together -- see AgentFloor's 96%/72% single-call/two-step-chain numbers above.
-
-If you've identified which file and what's wrong, the next action is editing that file -- not another read,
-not another test script, not a summary of what you found. Write the corrected file in the same turn you
-finish diagnosing. Only stop without an edit if you genuinely need more information to know what to change.
-
-*(This section is this session's own finding, not yet suite-measured the way the sections above are --
-EXP-079, if it runs, is what would confirm whether this instruction actually changes the real-repo fix rate.)*
-EOF
-)
 
 # ============================================================================================================
 # Shared functions
@@ -263,18 +182,16 @@ json_field() {
 # config_sig is computed from the live constants, never hand-maintained, so it cannot drift from the code that
 # defines it. CI's version-sync job checks this against the repo's own VERSION file.
 config_sig() {
-  {
-    printf '%s\n' "$MODEL_FILE" "$MODEL_BYTES" "${SERVER_FLAGS[@]}" "$CTX" "$MAX_TOKENS" "$COMPACT_RESERVE" "$COMPACT_KEEP" "$REPORT_PROMPT"
-    printf '%s' "$AGENTS_MD_BODY"
-  } | shasum -a 256 | cut -c1-16
+  printf '%s\n' "$MODEL_FILE" "$MODEL_BYTES" "${SERVER_FLAGS[@]}" "$CTX" "$MAX_TOKENS" "$REPORT_PROMPT" \
+    | shasum -a 256 | cut -c1-16
 }
 
 detect_hw() {  # sets CHIP, MEM_BYTES, MEM_GB, ARCH -- no exit, callers decide what to do with the result
-  if [ "${GEMMA4_KIT_SELFTEST:-0}" = "1" ]; then
-    echo "!! GEMMA4_KIT_SELFTEST=1: hardware values may be faked -- for CI and testing only !!" >&2
-    CHIP="${GEMMA4_KIT_FAKE_CHIP:-$(system_profiler SPHardwareDataType 2>/dev/null | awk -F': ' '/Chip/ {print $2}')}"
-    MEM_BYTES="${GEMMA4_KIT_FAKE_MEMBYTES:-$(sysctl -n hw.memsize 2>/dev/null || echo 0)}"
-    ARCH="${GEMMA4_KIT_FAKE_ARCH:-$(uname -m)}"
+  if [ "${ANVIL_KIT_SELFTEST:-0}" = "1" ]; then
+    echo "!! ANVIL_KIT_SELFTEST=1: hardware values may be faked -- for CI and testing only !!" >&2
+    CHIP="${ANVIL_KIT_FAKE_CHIP:-$(system_profiler SPHardwareDataType 2>/dev/null | awk -F': ' '/Chip/ {print $2}')}"
+    MEM_BYTES="${ANVIL_KIT_FAKE_MEMBYTES:-$(sysctl -n hw.memsize 2>/dev/null || echo 0)}"
+    ARCH="${ANVIL_KIT_FAKE_ARCH:-$(uname -m)}"
   else
     CHIP=$(system_profiler SPHardwareDataType 2>/dev/null | awk -F': ' '/Chip/ {print $2}')
     MEM_BYTES=$(sysctl -n hw.memsize 2>/dev/null || echo 0)
@@ -421,7 +338,6 @@ step_prereqs() {
   echo
   echo "== Checking prerequisites =="
   WE_INSTALLED_LLAMA_SERVER=0
-  WE_INSTALLED_PI=0
   if ! command -v llama-server >/dev/null 2>&1; then
     if ! command -v brew >/dev/null 2>&1; then
       echo "llama.cpp is missing, and so is Homebrew (needed to install it)." >&2
@@ -432,17 +348,16 @@ step_prereqs() {
     if ask "Install it now? [y/N]"; then brew install llama.cpp; WE_INSTALLED_LLAMA_SERVER=1
     else echo "Skipped -- re-run after installing it." >&2; exit 1; fi
   fi
-  if ! command -v pi >/dev/null 2>&1; then
-    if ! command -v npm >/dev/null 2>&1; then
-      echo "pi is missing, and so is npm (needed to install it)." >&2
-      echo "Install Node.js first (includes npm): brew install node" >&2
-      exit 1
-    fi
-    echo "pi (the coding agent CLI) is not installed. Install with: npm install -g @earendil-works/pi-coding-agent"
-    if ask "Install it now? [y/N]"; then npm install -g @earendil-works/pi-coding-agent; WE_INSTALLED_PI=1
-    else echo "Skipped -- re-run after installing it." >&2; exit 1; fi
+  if ! command -v node >/dev/null 2>&1; then
+    echo "node is required by this installer's own helper scripts (JSON parsing, speed measurement)." >&2
+    echo "Install it first: brew install node" >&2
+    exit 1
   fi
-  echo "Prerequisites OK: $(llama-server --version 2>&1 | head -1), pi $(pi --version 2>/dev/null)"
+  if ! command -v go >/dev/null 2>&1; then
+    echo "warning: go is not installed -- you won't be able to build go-agent (the CLI this kit points you at)." >&2
+    echo "Install it with: brew install go" >&2
+  fi
+  echo "Prerequisites OK: $(llama-server --version 2>&1 | head -1)"
 }
 
 step_download() {
@@ -543,201 +458,18 @@ step_server() {  # $1: "reuse" (default) or "restart" -- restart is what --upgra
   echo "Server ready on port $PORT."
 }
 
-# Writes pi's provider config. Prints ONLY the PRIOR compaction values on stdout, as
-# "reserve=<n-or-empty> keep=<n-or-empty> had_block=<0-or-1>", so a caller doing `prior=$(step_config)` gets a
-# clean, parseable value -- every progress message below goes to stderr instead, precisely so it isn't
-# swallowed into that capture (an earlier version of this function mixed the two streams, which both hid
-# install's progress output from the terminal and made this function unsafe to call more than once).
-step_config() {
-  echo >&2
-  echo "== Configuring pi ==" >&2
-  mkdir -p "$HOME/.pi/agent"
-  # Every snippet below REFUSES to proceed on a models.json/settings.json that exists but isn't valid JSON.
-  # The earlier version swallowed the parse error and started from `{}`, which would have silently replaced a
-  # user's entire provider list with just ours the moment they had a stray trailing comma in the file.
-  PROVIDER_KEY="$PROVIDER_KEY" MODEL_ID="$MODEL_ID" CTX="$CTX" MAX_TOKENS="$MAX_TOKENS" PORT="$PORT" \
-  node -e '
-    const fs = require("fs");
-    const path = process.env.HOME + "/.pi/agent/models.json";
-    let cfg = { providers: {} };
-    if (fs.existsSync(path)) {
-      try { cfg = JSON.parse(fs.readFileSync(path, "utf8")); }
-      catch (e) { console.error(path + " exists but is not valid JSON (" + e.message + ") -- fix or move it first; refusing to overwrite it."); process.exit(3); }
-    }
-    if (cfg === null || typeof cfg !== "object" || Array.isArray(cfg)) cfg = { providers: {} };
-    cfg.providers = cfg.providers || {};
-    cfg.providers[process.env.PROVIDER_KEY] = {
-      baseUrl: "http://127.0.0.1:" + process.env.PORT + "/v1",
-      api: "openai-completions",
-      apiKey: "local",
-      compat: { supportsDeveloperRole: false, supportsReasoningEffort: false },
-      models: [{
-        id: process.env.MODEL_ID, name: process.env.PROVIDER_KEY,
-        contextWindow: Number(process.env.CTX), maxTokens: Number(process.env.MAX_TOKENS), reasoning: false,
-      }],
-    };
-    fs.writeFileSync(path, JSON.stringify(cfg, null, 2) + "\n");
-    console.error("wrote " + path);
-  ' || return 3
-  # Explicit `|| return 3` on every node call in this function, not just `set -e`: callers capture this
-  # function with `prior=$(step_config)`, and bash does not carry -e into a command-substitution subshell, so
-  # without these a refused/failed write would print its error and the install would carry on as if it worked.
-  local prior
-  prior=$(node -e '
-    const fs = require("fs");
-    const path = process.env.HOME + "/.pi/agent/settings.json";
-    let cfg = {};
-    if (fs.existsSync(path)) {
-      try { cfg = JSON.parse(fs.readFileSync(path, "utf8")); }
-      catch (e) { console.error(path + " exists but is not valid JSON (" + e.message + ") -- fix or move it first; refusing to overwrite it."); process.exit(3); }
-    }
-    if (cfg === null || typeof cfg !== "object" || Array.isArray(cfg)) cfg = {};
-    const c = cfg.compaction || {};
-    process.stdout.write(
-      "reserve=" + (c.reserveTokens === undefined ? "" : c.reserveTokens) +
-      " keep=" + (c.keepRecentTokens === undefined ? "" : c.keepRecentTokens) +
-      " had_block=" + (cfg.compaction ? 1 : 0)
-    );
-  ') || return 3
-  COMPACT_RESERVE="$COMPACT_RESERVE" COMPACT_KEEP="$COMPACT_KEEP" \
-  node -e '
-    const fs = require("fs");
-    const path = process.env.HOME + "/.pi/agent/settings.json";
-    let cfg = {};
-    if (fs.existsSync(path)) {
-      try { cfg = JSON.parse(fs.readFileSync(path, "utf8")); }
-      catch (e) { console.error(path + " exists but is not valid JSON (" + e.message + ") -- refusing to overwrite it."); process.exit(3); }
-    }
-    if (cfg === null || typeof cfg !== "object" || Array.isArray(cfg)) cfg = {};
-    cfg.compaction = cfg.compaction || {};
-    // The library defaults (reserveTokens 16384, keepRecentTokens 20000) exceed a 24576-token window and cause
-    // endless compaction, reproduced directly this session as a 143-round loop that made zero edits.
-    cfg.compaction.reserveTokens = Number(process.env.COMPACT_RESERVE);
-    cfg.compaction.keepRecentTokens = Number(process.env.COMPACT_KEEP);
-    fs.writeFileSync(path, JSON.stringify(cfg, null, 2) + "\n");
-    console.error("wrote " + path);
-  ' || return 3
-  printf '%s' "$prior"
-}
-
-configure_or_die() {  # PRIOR=$(step_config) with the failure actually stopping the run -- see step_config's note
-  PRIOR=$(step_config) || {
-    echo "pi's config was NOT written (see the message above) -- nothing else was changed by this step." >&2
-    exit 1
-  }
-}
-
-# Installs the two tool-call-reliability extensions (see the comment above PI_EXTENSION_URL). Failure here is
-# non-fatal -- these harden an already-working setup, they don't gate it -- but every failure is reported so
-# it's never silently skipped. Re-run-safe: re-downloads the extension file every time (cheap, always current)
-# and only appends to settings.json's `packages`/`extensions` arrays when the entry isn't already present, so
-# it never grows duplicates across repeated installs/upgrades and never touches an entry a user added themselves.
-step_pi_extensions() {
-  echo
-  echo "== Installing pi tool-call reliability extensions =="
-  mkdir -p "$KIT_DIR/pi-extensions"
-  local ext_dest="$KIT_DIR/pi-extensions/$PI_EXTENSION_FILE"
-  if curl -fsSL "$PI_EXTENSION_URL" -o "$ext_dest.tmp" 2>/dev/null; then
-    mv "$ext_dest.tmp" "$ext_dest"
-    echo "downloaded $ext_dest"
-  else
-    rm -f "$ext_dest.tmp"
-    echo "warning: could not download $PI_EXTENSION_URL -- skipping gemma4-tool-recovery.ts this run." >&2
-  fi
-
-  if [ -f "$ext_dest" ]; then
-    EXT_DEST="$ext_dest" node -e '
-      const fs = require("fs");
-      const path = process.env.HOME + "/.pi/agent/settings.json";
-      let cfg = {};
-      if (fs.existsSync(path)) {
-        try { cfg = JSON.parse(fs.readFileSync(path, "utf8")); }
-        catch (e) { console.error(path + " exists but is not valid JSON (" + e.message + ") -- refusing to touch it."); process.exit(3); }
-      }
-      if (cfg === null || typeof cfg !== "object" || Array.isArray(cfg)) cfg = {};
-      cfg.extensions = Array.isArray(cfg.extensions) ? cfg.extensions : [];
-      if (!cfg.extensions.includes(process.env.EXT_DEST)) cfg.extensions.push(process.env.EXT_DEST);
-      fs.writeFileSync(path, JSON.stringify(cfg, null, 2) + "\n");
-      console.error("settings.json extensions[] includes " + process.env.EXT_DEST);
-    ' || echo "warning: failed to register the extension in settings.json." >&2
-  fi
-
-  PI_ANTI_LOOP_PACKAGE="$PI_ANTI_LOOP_PACKAGE" node -e '
-    const fs = require("fs");
-    const path = process.env.HOME + "/.pi/agent/settings.json";
-    let cfg = {};
-    if (fs.existsSync(path)) {
-      try { cfg = JSON.parse(fs.readFileSync(path, "utf8")); }
-      catch (e) { console.error(path + " exists but is not valid JSON (" + e.message + ") -- refusing to touch it."); process.exit(3); }
-    }
-    if (cfg === null || typeof cfg !== "object" || Array.isArray(cfg)) cfg = {};
-    cfg.packages = Array.isArray(cfg.packages) ? cfg.packages : [];
-    if (!cfg.packages.includes(process.env.PI_ANTI_LOOP_PACKAGE)) cfg.packages.push(process.env.PI_ANTI_LOOP_PACKAGE);
-    fs.writeFileSync(path, JSON.stringify(cfg, null, 2) + "\n");
-    console.error("settings.json packages[] includes " + process.env.PI_ANTI_LOOP_PACKAGE);
-  ' || echo "warning: failed to register $PI_ANTI_LOOP_PACKAGE in settings.json." >&2
-
-  # Install it now rather than waiting for pi's own on-startup auto-install, so the first real run isn't the
-  # one paying the (small, one-time) npm install cost, and so a failure here is visible immediately.
-  if command -v pi >/dev/null 2>&1; then
-    pi install "$PI_ANTI_LOOP_PACKAGE" --approve >/dev/null 2>&1 \
-      && echo "installed $PI_ANTI_LOOP_PACKAGE" \
-      || echo "warning: 'pi install $PI_ANTI_LOOP_PACKAGE' failed -- pi will retry automatically on next startup." >&2
-  fi
-}
-
-# Writes AGENTS.md into the CURRENT directory. If one already exists and isn't ours (no marker line, or a
-# marker from a different write than we're about to do isn't checkable here -- that's uninstall's job to
-# decide, not install's), it's backed up rather than silently destroyed. The original `cat > ./AGENTS.md`
-# clobbered a hand-written file with no warning at all -- confirmed by inspection, fixed here.
-step_agents_md() {
-  echo
-  echo "== Writing AGENTS.md =="
-  local backup="" here; here="$(pwd)"
-  if [ -f ./AGENTS.md ] && ! grep -qF "gemma4-coding-kit" ./AGENTS.md 2>/dev/null; then
-    backup="$here/AGENTS.md.pre-gemma4-kit"
-    cp ./AGENTS.md "$backup"
-    echo "An existing ./AGENTS.md wasn't ours -- backed it up to $backup before writing."
-  fi
-  { printf '%s\n\n%s\n' "$AGENTS_MD_BODY" "$AGENTS_MARKER"; } > ./AGENTS.md
-  echo "wrote ./AGENTS.md"
-  local sha; sha=$(shasum -a 256 ./AGENTS.md | cut -d' ' -f1)
-  mkdir -p "$KIT_DIR"
-  # One line per path: a re-install or --upgrade over the same directory replaces that path's recorded sha
-  # rather than appending a stale duplicate uninstall.sh would then trip over.
-  if [ -f "$AGENTS_LIST" ]; then
-    grep -vF -- "$(printf '\t')$here/AGENTS.md" "$AGENTS_LIST" > "$AGENTS_LIST.tmp" || true
-    mv "$AGENTS_LIST.tmp" "$AGENTS_LIST"
-  fi
-  printf '%s\t%s\n' "$sha" "$here/AGENTS.md" >> "$AGENTS_LIST"
-  AGENTS_MD_BACKUP="$backup"
-}
-
 manifest_get() {  # manifest_get KEY -> value from the existing install.env, or empty
   [ -f "$INSTALL_ENV" ] || return 0
   grep "^$1=" "$INSTALL_ENV" | cut -d= -f2- || true
 }
 
-write_manifest() {  # $1: prior compaction line from step_config ("reserve=X keep=Y had_block=Z")
-  local reserve keep had_block
-  reserve=$(printf '%s' "$1" | sed -n 's/.*reserve=\([0-9]*\).*/\1/p')
-  keep=$(printf '%s' "$1" | sed -n 's/.*keep=\([0-9]*\).*/\1/p')
-  had_block=$(printf '%s' "$1" | sed -n 's/.*had_block=\([0-9]\).*/\1/p')
+write_manifest() {
   # A re-install or --upgrade over an existing install must NOT overwrite what the FIRST install recorded
-  # about the world before this kit touched it: by now settings.json already holds our compaction values, so
-  # re-reading it would record our own numbers as the "prior" ones and make uninstall's revert a no-op; and
-  # the prerequisites are now present, so re-detecting them would forget that the kit was what installed them.
-  local we_llama="${WE_INSTALLED_LLAMA_SERVER:-0}" we_pi="${WE_INSTALLED_PI:-0}" backup="${AGENTS_MD_BACKUP:-}"
+  # about the world before this kit touched it -- the prerequisite it installed is still worth remembering.
+  local we_llama="${WE_INSTALLED_LLAMA_SERVER:-0}"
   local first_install_at; first_install_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   if [ -f "$INSTALL_ENV" ]; then
-    if [ "$(manifest_get SETTINGS_HAD_COMPACTION)" != "" ]; then
-      had_block=$(manifest_get SETTINGS_HAD_COMPACTION)
-      reserve=$(manifest_get SETTINGS_PRIOR_RESERVE)
-      keep=$(manifest_get SETTINGS_PRIOR_KEEP)
-    fi
     [ "$(manifest_get WE_INSTALLED_LLAMA_SERVER)" = "1" ] && we_llama=1
-    [ "$(manifest_get WE_INSTALLED_PI)" = "1" ] && we_pi=1
-    [ -z "$backup" ] && backup=$(manifest_get AGENTS_MD_BACKUP)
     [ -n "$(manifest_get INSTALLED_AT)" ] && first_install_at=$(manifest_get INSTALLED_AT)
   fi
   mkdir -p "$KIT_DIR"
@@ -749,21 +481,15 @@ UPDATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 MODEL_PATH=$DEST
 MODEL_BYTES=$MODEL_BYTES
 PORT=$PORT
-PROVIDER_KEY=$PROVIDER_KEY
+MODEL_ID=$MODEL_ID
 WE_INSTALLED_LLAMA_SERVER=$we_llama
-WE_INSTALLED_PI=$we_pi
-SETTINGS_HAD_COMPACTION=$had_block
-SETTINGS_PRIOR_RESERVE=$reserve
-SETTINGS_PRIOR_KEEP=$keep
-PI_VERSION=$(pi --version 2>/dev/null || echo "")
-AGENTS_MD_BACKUP=$backup
 EOF
   echo "wrote $INSTALL_ENV"
 }
 
 # ============================================================================================================
 # --doctor -- strictly read-only. Never starts, writes, or downloads anything; every failure line names an
-# existing mode (--config-only, --start-only, --force-download) rather than re-implementing what it would do.
+# existing mode (--start-only, --force-download) rather than re-implementing what it would do.
 # ============================================================================================================
 doctor() {
   local fails=0 warns=0 passes=0
@@ -777,7 +503,7 @@ doctor() {
     esac
   }
 
-  echo "== gemma4-coding-kit doctor =="
+  echo "== anvil-agent doctor =="
   if [ -f "$INSTALL_ENV" ]; then
     echo "kit $(manifest_get KIT_VERSION) (config $(manifest_get CONFIG_SIG)), installed $(manifest_get INSTALLED_AT)"
     local installed_sig; installed_sig=$(manifest_get CONFIG_SIG)
@@ -816,22 +542,15 @@ doctor() {
   else
     tag fail "llama-server not on PATH -- install with: brew install llama.cpp"
   fi
-  if command -v pi >/dev/null 2>&1; then
-    tag ok "pi  $(pi --version 2>/dev/null)"
-    if [ -f "$INSTALL_ENV" ]; then
-      local recorded_pi; recorded_pi=$(manifest_get PI_VERSION)
-      local current_pi; current_pi=$(pi --version 2>/dev/null)
-      if [ -n "$recorded_pi" ] && [ "$recorded_pi" != "$current_pi" ]; then
-        tag warn "pi was $recorded_pi at install, is $current_pi now -- if something broke, try --config-only"
-      fi
-    fi
-  else
-    tag fail "pi not on PATH -- install with: npm install -g @earendil-works/pi-coding-agent"
-  fi
   if command -v node >/dev/null 2>&1; then
     tag ok "node  $(node --version)"
   else
-    tag fail "node not on PATH -- pi requires it"
+    tag fail "node not on PATH -- required by this installer's own helper scripts"
+  fi
+  if command -v go >/dev/null 2>&1; then
+    tag ok "go  $(go version 2>&1)"
+  else
+    tag warn "go not on PATH -- needed to build go-agent, the CLI this kit points you at"
   fi
 
   echo
@@ -885,68 +604,6 @@ doctor() {
   fi
 
   echo
-  echo "== pi config =="
-  local models_json="$HOME/.pi/agent/models.json"
-  if [ -f "$models_json" ]; then
-    local summary
-    summary=$(PROVIDER_KEY="$PROVIDER_KEY" PORT="$PORT" MODEL_ID="$MODEL_ID" node -e '
-      const fs = require("fs");
-      try {
-        const cfg = JSON.parse(fs.readFileSync(process.env.HOME + "/.pi/agent/models.json", "utf8"));
-        const p = cfg.providers && cfg.providers[process.env.PROVIDER_KEY];
-        if (!p) { console.log("missing"); process.exit(0); }
-        const m = (p.models || [])[0] || {};
-        const portOk = (p.baseUrl || "").includes(":" + process.env.PORT + "/");
-        const idOk = m.id === process.env.MODEL_ID;
-        const reasoningOk = m.reasoning === false;
-        console.log((portOk && idOk && reasoningOk ? "ok" : "mismatch") +
-          " port=" + portOk + " id=" + idOk + " reasoning=" + reasoningOk);
-      } catch (e) { console.log("parse-error " + e.message); }
-    ')
-    case "$summary" in
-      ok*) tag ok "models.json  providers.$PROVIDER_KEY -> port $PORT, model $MODEL_ID, reasoning off" ;;
-      missing) tag fail "models.json has no providers.$PROVIDER_KEY entry -- run: setup.sh --config-only" ;;
-      parse-error*) tag fail "models.json: ${summary#parse-error }" ;;
-      *) tag fail "models.json providers.$PROVIDER_KEY looks wrong ($summary) -- run: setup.sh --config-only" ;;
-    esac
-  else
-    tag skip "no $models_json -- run setup.sh to install"
-  fi
-  local settings_json="$HOME/.pi/agent/settings.json"
-  if [ -f "$settings_json" ]; then
-    local creserve ckeep
-    creserve=$(node -e 'const c=JSON.parse(require("fs").readFileSync(process.env.HOME+"/.pi/agent/settings.json","utf8")).compaction||{};process.stdout.write(String(c.reserveTokens??""))' 2>/dev/null || echo "")
-    ckeep=$(node -e 'const c=JSON.parse(require("fs").readFileSync(process.env.HOME+"/.pi/agent/settings.json","utf8")).compaction||{};process.stdout.write(String(c.keepRecentTokens??""))' 2>/dev/null || echo "")
-    if [ "$creserve" = "$COMPACT_RESERVE" ] && [ "$ckeep" = "$COMPACT_KEEP" ]; then
-      tag ok "settings.json compaction.reserveTokens=$creserve keepRecentTokens=$ckeep"
-    else
-      tag fail "settings.json compaction.reserveTokens=$creserve keepRecentTokens=$ckeep (expected $COMPACT_RESERVE/$COMPACT_KEEP)"
-      echo "       -> endless-compaction risk; a 143-round loop that edits nothing. Rewrite config only:"
-      echo "          setup.sh --config-only"
-    fi
-    local has_ext has_pkg
-    has_ext=$(node -e 'const e=JSON.parse(require("fs").readFileSync(process.env.HOME+"/.pi/agent/settings.json","utf8")).extensions||[];process.stdout.write(e.some(p=>String(p).endsWith("'"$PI_EXTENSION_FILE"'"))?"1":"0")' 2>/dev/null || echo 0)
-    has_pkg=$(node -e 'const p=JSON.parse(require("fs").readFileSync(process.env.HOME+"/.pi/agent/settings.json","utf8")).packages||[];process.stdout.write(p.includes("'"$PI_ANTI_LOOP_PACKAGE"'")?"1":"0")' 2>/dev/null || echo 0)
-    if [ "$has_ext" = 1 ] && [ "$has_pkg" = 1 ]; then
-      tag ok "settings.json has both tool-call-reliability extensions ($PI_EXTENSION_FILE, $PI_ANTI_LOOP_PACKAGE)"
-    else
-      tag fail "settings.json is missing one or both tool-call-reliability extensions -- run: setup.sh --config-only"
-    fi
-  fi
-
-  echo
-  echo "== AGENTS.md =="
-  if [ -f ./AGENTS.md ]; then
-    if grep -qF "gemma4-coding-kit" ./AGENTS.md; then
-      tag ok "./AGENTS.md present, appears to be ours"
-    else
-      tag skip "./AGENTS.md present but not ours (no marker) -- left alone"
-    fi
-  else
-    tag skip "no ./AGENTS.md in the current directory"
-  fi
-
-  echo
   echo "== $fails failed, $warns warning(s), $passes passed =="
   if [ "$fails" -gt 0 ]; then return 1; elif [ "$warns" -gt 0 ]; then return 2; else return 0; fi
 }
@@ -954,7 +611,7 @@ doctor() {
 # ============================================================================================================
 # --selftest -- prints detect_hw + hw_gate + speed_line output and the gate's own exit code, then returns
 # WITHOUT installing anything. This is the only mode CI's hardware-detection tests exercise; it structurally
-# cannot download, boot a server, write config, or exec pi.
+# cannot download or boot a server.
 # ============================================================================================================
 selftest() {
   detect_hw
@@ -974,7 +631,7 @@ selftest() {
 # Unreachable network is treated as success, not failure: a version check must never fail loud on a plane.
 # ============================================================================================================
 check() {
-  echo "== gemma4-coding-kit version check =="
+  echo "== anvil-agent version check =="
   echo "local script: $KIT_VERSION (config $(config_sig))"
   local remote; remote=$(curl -fs -m 5 "$VERSION_URL" 2>/dev/null || true)
   local r_ver r_sig r_model r_bytes stale=0
@@ -1013,9 +670,8 @@ check() {
 
 # ============================================================================================================
 # --upgrade -- a flagged variant of install: restarts the server (a flag change wouldn't otherwise take
-# effect), rewrites AGENTS.md (step_agents_md already backs up a hand-edited one), and offers to prune an old
-# model file left behind if MODEL_FILE changed since the last install. Requires a prior install (install.env)
-# -- upgrading nothing isn't a meaningful operation.
+# effect) and offers to prune an old model file left behind if MODEL_FILE changed since the last install.
+# Requires a prior install (install.env) -- upgrading nothing isn't a meaningful operation.
 # ============================================================================================================
 upgrade() {
   if [ ! -f "$INSTALL_ENV" ]; then
@@ -1027,10 +683,7 @@ upgrade() {
   step_prereqs
   step_download
   step_server restart
-  configure_or_die
-  step_pi_extensions
-  step_agents_md
-  write_manifest "$PRIOR"
+  write_manifest
   if [ -n "$old_model" ] && [ "$old_model" != "$DEST" ] && [ -f "$old_model" ]; then
     echo
     if ask "Old model no longer used: $old_model -- delete it? [y/N]"; then
@@ -1055,7 +708,7 @@ upgrade() {
 run_benchmark() {
   if [ ! -f "$BENCH_DIR/grade.mjs" ] || [ ! -d "$BENCH_DIR/scenarios" ] || [ ! -d "$BENCH_DIR/oracle" ]; then
     echo "--benchmark needs the full repo checkout, not the curl-pipe install." >&2
-    echo "Run: git clone https://github.com/megasoft1978/gemma4-coding-kit && cd gemma4-coding-kit && ./setup.sh --benchmark" >&2
+    echo "Run: git clone https://github.com/megasoft1978/anvil-agent && cd anvil-agent && ./setup.sh --benchmark" >&2
     exit 1
   fi
   local pid; pid=$(server_pid || true)
@@ -1064,7 +717,7 @@ run_benchmark() {
     exit 1
   fi
 
-  echo "== gemma4-coding-kit benchmark: $BENCH_TARGET =="
+  echo "== anvil-agent benchmark: $BENCH_TARGET =="
   node "$BENCH_DIR/bench.mjs" "$BENCH_TARGET" --port "$PORT" --max-tokens "$MAX_TOKENS" | node -e '
     let fails = 0, warns = 0, totalPass = 0, totalBugs = 0, totalWall = 0, n = 0, totalTok = 0, genSecs = 0, accepted = [];
     const tag = (kind, msg) => {
@@ -1145,7 +798,7 @@ timed_completion() {
 }
 
 report_speed() {
-  echo "== gemma4-coding-kit chip speed report =="
+  echo "== anvil-agent chip speed report =="
   local pid; pid=$(server_pid || true)
   if [ -z "$pid" ] || ! server_health; then
     echo "No validated server running on port $PORT. Start one first: setup.sh --start-only" >&2
@@ -1178,7 +831,7 @@ report_speed() {
       macos_version: process.env.REPORT_MAC || "",
       measured_tps: process.env.REPORT_TPS || "",
     });
-    console.log("https://github.com/megasoft1978/gemma4-coding-kit/issues/new?" + params.toString());
+    console.log("https://github.com/megasoft1978/anvil-agent/issues/new?" + params.toString());
   '
 }
 
@@ -1232,14 +885,6 @@ case "$MODE" in
   upgrade)
     upgrade
     ;;
-  config-only)
-    configure_or_die
-    step_pi_extensions
-    write_manifest "$PRIOR"
-    step_agents_md
-    echo
-    echo "Config rewritten. Nothing was downloaded and the server was not touched."
-    ;;
   start-only)
     step_server restart
     ;;
@@ -1248,16 +893,14 @@ case "$MODE" in
     step_prereqs
     step_download
     step_server reuse
-    configure_or_die
-    step_pi_extensions
-    step_agents_md
-    write_manifest "$PRIOR"
+    write_manifest
     echo
-    if [ "$NO_EXEC" = "1" ]; then
-      echo "== Ready. (--no-exec set, not starting pi.) =="
-    else
-      echo "== Ready. Starting pi. =="
-      exec pi --provider "$PROVIDER_KEY" --model "$MODEL_ID"
-    fi
+    echo "== Ready. Server running on port $PORT. =="
+    echo "Point go-agent at it (needs a full checkout -- this installer is a single file, go-agent is not):"
+    echo "  git clone https://github.com/megasoft1978/anvil-agent && cd anvil-agent/go-agent"
+    echo "  go build -o anvil-agent ."
+    echo "  ./anvil-agent --root <your-project> --endpoint http://127.0.0.1:$PORT/v1 --model $MODEL_ID \\"
+    echo "      --prompt \"describe the bug\" --test-command '[\"npm\",\"test\"]'"
+    echo "See go-agent/README.md for the full flag list."
     ;;
 esac

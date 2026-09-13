@@ -15,15 +15,15 @@ import (
 // Grade confirmed source edits even when generation timed out before the final test command.
 // Replay only successful edit results, never an unconfirmed write-ahead backup.
 func TestReplayRealRepoOracle(t *testing.T) {
-	trace := os.Getenv("GEMMA_REPLAY_TRACE")
+	trace := os.Getenv("ANVIL_REPLAY_TRACE")
 	if trace == "" {
-		t.Skip("requires GEMMA_REPLAY_TRACE and GEMMA_PILOT")
+		t.Skip("requires ANVIL_REPLAY_TRACE and ANVIL_PILOT")
 	}
-	pilot := os.Getenv("GEMMA_PILOT")
+	pilot := os.Getenv("ANVIL_PILOT")
 	if pilot == "" {
-		t.Fatal("GEMMA_PILOT required")
+		t.Fatal("ANVIL_PILOT required")
 	}
-	stage := os.Getenv("GEMMA_REPO_STAGE")
+	stage := os.Getenv("ANVIL_REPO_STAGE")
 	if stage == "" {
 		stage = "dayjs-guided"
 	}
@@ -77,7 +77,7 @@ func TestReplayRealRepoOracle(t *testing.T) {
 				pending = nil
 				continue
 			}
-			if pending == nil || !repoSource(stage, pending.Path) || fmt.Sprintf("%x", sha256.Sum256([]byte(pending.After))) != result.Output.Result.AfterSHA {
+			if pending == nil || !task.isSource(stage, pending.Path) || fmt.Sprintf("%x", sha256.Sum256([]byte(pending.After))) != result.Output.Result.AfterSHA {
 				t.Fatal("unconfirmed or out-of-scope edit")
 			}
 			path := filepath.Join(root, pending.Path)
@@ -105,7 +105,7 @@ func TestReplayRealRepoOracle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := checkRepoChanges(stage, before, after); err != nil {
+	if err := checkRepoChanges(task, stage, before, after); err != nil {
 		t.Fatal(err)
 	}
 	result, err := runCommand(context.Background(), root, command, 30*time.Second)

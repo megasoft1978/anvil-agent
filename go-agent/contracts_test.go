@@ -163,7 +163,7 @@ func TestVerificationOutcomes(t *testing.T) {
 	}{
 		{"passes", "completed", []string{"/bin/sh", "-c", "exit 0"}},
 		{"fails", "verification_failed", []string{"/bin/sh", "-c", "exit 1"}},
-		{"missing", "verification_error", []string{"/nonexistent-gemma-test-command"}},
+		{"missing", "verification_error", []string{"/nonexistent-test-command"}},
 		{"tool-timeout", "verification_failed", []string{"/bin/sh", "-c", "sleep 10"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

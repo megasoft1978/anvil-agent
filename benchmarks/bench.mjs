@@ -139,7 +139,7 @@ async function runScenario(scenario, opts) {
     return { scenario: scenario.id, verdict: "error", detail: "empty response", wall_s: wall_s1 };
   }
 
-  const scratchDir = mkdtempSync(path.join(tmpdir(), "gemma4-kit-bench-"));
+  const scratchDir = mkdtempSync(path.join(tmpdir(), "anvil-agent-bench-"));
   try {
     const first = gradeAndScore(scenario, content, scratchDir);
 

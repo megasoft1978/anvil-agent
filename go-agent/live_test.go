@@ -39,15 +39,15 @@ func livePageouts() (int64, error) {
 
 // This suite never starts a server. Opt in only after arranging enough RAM for the local model.
 // Run sequentially; preserve traces outside testing.T's temporary fixture directory.
-func TestLiveGemma4(t *testing.T) {
-	if os.Getenv("GEMMA_LIVE") != "1" {
-		t.Skip("opt-in only: GEMMA_LIVE=1; needs an already-running local Gemma server")
+func TestLiveModel(t *testing.T) {
+	if os.Getenv("ANVIL_LIVE") != "1" {
+		t.Skip("opt-in only: ANVIL_LIVE=1; needs an already-running local model server")
 	}
-	allowPaging := os.Getenv("GEMMA_ALLOW_PAGING") == "1"
+	allowPaging := os.Getenv("ANVIL_ALLOW_PAGING") == "1"
 	if allowPaging {
 		t.Log("paging abort explicitly disabled; memory measurements remain recorded")
 	}
-	endpoint := os.Getenv("GEMMA_LIVE_ENDPOINT")
+	endpoint := os.Getenv("ANVIL_LIVE_ENDPOINT")
 	if endpoint == "" {
 		endpoint = "http://127.0.0.1:8114/v1"
 	}
@@ -74,7 +74,7 @@ func TestLiveGemma4(t *testing.T) {
 	if response.StatusCode != 200 {
 		t.Fatalf("health HTTP %d", response.StatusCode)
 	}
-	output := os.Getenv("GEMMA_LIVE_OUTPUT")
+	output := os.Getenv("ANVIL_LIVE_OUTPUT")
 	if output == "" {
 		output = "live-results"
 	}
@@ -82,19 +82,19 @@ func TestLiveGemma4(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	model := os.Getenv("GEMMA_LIVE_MODEL")
+	model := os.Getenv("ANVIL_LIVE_MODEL")
 	if model == "" {
-		model = "qwen30b-a3b"
+		model = "qwen36-35b-a3b"
 	}
-	timeout := os.Getenv("GEMMA_LIVE_TIMEOUT")
+	timeout := os.Getenv("ANVIL_LIVE_TIMEOUT")
 	if timeout == "" {
 		timeout = "120s"
 	}
-	maxTokens := os.Getenv("GEMMA_LIVE_MAX_TOKENS")
+	maxTokens := os.Getenv("ANVIL_LIVE_MAX_TOKENS")
 	stages := []string{"read-and-finish", "edit-and-test"}
-	if stage := os.Getenv("GEMMA_REPO_STAGE"); stage != "" {
-		if os.Getenv("GEMMA_PILOT") == "" {
-			t.Fatal("GEMMA_REPO_STAGE requires GEMMA_PILOT")
+	if stage := os.Getenv("ANVIL_REPO_STAGE"); stage != "" {
+		if os.Getenv("ANVIL_PILOT") == "" {
+			t.Fatal("ANVIL_REPO_STAGE requires ANVIL_PILOT")
 		}
 		stages = append(stages, stage)
 	}
@@ -131,7 +131,7 @@ func TestLiveGemma4(t *testing.T) {
 					t.Fatal(err)
 				}
 				report = filepath.Join(oracleDir, "oracle.json")
-				task, command, snapshot = prepareRepo(t, os.Getenv("GEMMA_PILOT"), stage, root, report)
+				task, command, snapshot = prepareRepo(t, os.Getenv("ANVIL_PILOT"), stage, root, report)
 				encoded, err := json.Marshal(command)
 				if err != nil {
 					t.Fatal(err)
@@ -204,7 +204,7 @@ func TestLiveGemma4(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if err := checkRepoChanges(stage, snapshot, after); err != nil {
+					if err := checkRepoChanges(task, stage, snapshot, after); err != nil {
 						t.Fatal(err)
 					}
 					if err := checkRepoReport(report, task, true); err != nil {

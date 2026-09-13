@@ -37,7 +37,7 @@ func main() {
 }
 
 func cli(parent context.Context, argv []string, stdout, stderr io.Writer) int {
-	flags := flag.NewFlagSet("gemma-agent", flag.ContinueOnError)
+	flags := flag.NewFlagSet("anvil-agent", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	rootPath := flags.String("root", ".", "existing worktree to inspect and edit")
 	endpoint := flags.String("endpoint", "http://127.0.0.1:8114/v1", "OpenAI-compatible base URL of an already-running server")
@@ -45,52 +45,28 @@ func cli(parent context.Context, argv []string, stdout, stderr io.Writer) int {
 	promptFile := flags.String("prompt-file", "", "file containing the task description")
 	taskFile := flags.String("task-file", "", "research task JSON; sends only its report field to the model")
 	instructions := flags.String("instructions", "", "optional explicit instructions file; no ambient AGENTS.md discovery")
-	output := flags.String("output", "", "artifact parent directory outside the worktree; default: sibling .<worktree>-gemma-runs")
+	output := flags.String("output", "", "artifact parent directory outside the worktree; default: sibling .<worktree>-anvil-runs")
 	testCommand := flags.String("test-command", "", `fixed test argv as JSON, e.g. '["node","test.mjs"]'; no shell parsing`)
 	timeout := flags.Duration("timeout", 120*time.Second, "total deadline, including requests, tools, and final verification")
-	// Everything below is a fixed default tuned for Qwen3.6-35B-A3B (the model this
-	// harness targets, superseding Qwen3-30B-A3B after live comparison: same MoE speed
-	// class, but the only model this session to actually pass the dayjs-guided oracle
-	// test, twice, independently) rather than a CLI flag: rich edit feedback, the
+	// Everything below except sampling and prompt profile (now supplied per --model by
+	// profiles.go) is a fixed default rather than a CLI flag: rich edit feedback, the
 	// ledger's repeat-action refusal, read deduplication, 16 turns, a 30s test-command
 	// deadline, and a 64 KiB history ceiling. Live testing showed each of these
 	// measurably helps or was never once adjusted in practice; --timeout, --max-tokens,
 	// and --model are the knobs that actually vary run to run.
-	//
-	// Sampling is Qwen3.6-35B-A3B's own documented instruct/non-thinking-mode
-	// recommendation (temperature 0.7, top_p 0.8, top_k 20, presence_penalty 1.5,
-	// repetition_penalty 1.0), not greedy decoding: the model card explicitly warns
-	// greedy decoding can cause the exact "endless repetition" failure this harness
-	// spent real effort building structural workarounds for (the ledger, read-dedup,
-	// and the per-turn tool ban). This model thinks by default (unlike Qwen3-30B-A3B);
-	// --reasoning off on the server suppresses it, verified live to produce no leaked
-	// <think> content. A fixed seed keeps runs reproducible for the regression suite
-	// despite non-zero temperature.
-	temperature := 0.7
-	topP := 0.8
-	topK := 20
-	presencePenalty := 1.5
-	repeatPenalty := 1.0
-	seed := 42
 	config := Config{
 		ReadFormat:       "text",
-		PromptProfile:    "baseline",
 		RichEditFeedback: true,
 		Ledger:           true,
 		DedupReads:       true,
 		RecoverToolCalls: true,
 		MaxTurns:         16,
 		MaxHistoryBytes:  64 << 10,
-		Temperature:      temperature,
-		TopP:             &topP,
-		TopK:             &topK,
-		PresencePenalty:  &presencePenalty,
-		RepeatPenalty:    &repeatPenalty,
-		Seed:             &seed,
 	}
 	toolTimeout := 30 * time.Second
 	tui := flags.Bool("tui", false, "launch the interactive terminal UI instead of one-shot JSON output; silently falls back to headless when stdout is not a terminal")
-	flags.StringVar(&config.Model, "model", "qwen36-35b-a3b", "server model ID")
+	serverPID := flags.Int("server-pid", 0, "PID of the running llama-server; when set, samples its peak RSS and system-wide peak-wired/min-free memory for the duration of this run (macOS only, 0 disables)")
+	flags.StringVar(&config.Model, "model", "qwen36-35b-a3b", "server model ID; also selects its sampling/prompt profile from profiles.go")
 	flags.IntVar(&config.MaxTokens, "max-tokens", 8192, "maximum completion tokens per request")
 	fail := func(err error) int { fmt.Fprintln(stderr, err); return 2 }
 	if err := flags.Parse(argv); err != nil {
@@ -105,6 +81,7 @@ func cli(parent context.Context, argv []string, stdout, stderr io.Writer) int {
 	if *timeout <= 0 || config.MaxTokens < 1 || config.Model == "" {
 		return fail(fmt.Errorf("invalid limits or model"))
 	}
+	applyProfile(&config, profileFor(config.Model))
 	parsedURL, err := url.Parse(*endpoint)
 	if err != nil || parsedURL.Host == "" || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.User != nil || parsedURL.RawQuery != "" || parsedURL.Fragment != "" {
 		return fail(fmt.Errorf("endpoint must be an http(s) base URL without credentials, query, or fragment"))
@@ -179,7 +156,7 @@ func cli(parent context.Context, argv []string, stdout, stderr io.Writer) int {
 	}
 	defer root.Close()
 	if *output == "" {
-		*output = filepath.Join(filepath.Dir(absRoot), "."+filepath.Base(absRoot)+"-gemma-runs")
+		*output = filepath.Join(filepath.Dir(absRoot), "."+filepath.Base(absRoot)+"-anvil-runs")
 	}
 	if err := os.MkdirAll(*output, 0700); err != nil {
 		return fail(err)
@@ -211,10 +188,11 @@ func cli(parent context.Context, argv []string, stdout, stderr io.Writer) int {
 	}
 	ctx, cancel := context.WithTimeout(parent, *timeout)
 	defer cancel()
-	client := &Client{URL: *endpoint, APIKey: os.Getenv("GEMMA_API_KEY"), HTTP: &http.Client{
+	client := &Client{URL: *endpoint, APIKey: os.Getenv("ANVIL_API_KEY"), HTTP: &http.Client{
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 	}}
-	tools := &Tools{Root: root, TestCommand: command, ToolTimeout: toolTimeout, Trace: trace, Edited: map[string]bool{}, RichEditFeedback: config.RichEditFeedback}
+	tools := &Tools{Root: root, TestCommand: command, ToolTimeout: toolTimeout, Trace: trace, Edited: map[string]bool{}, RichEditFeedback: config.RichEditFeedback, SearchEnabled: true}
+	sampler := startMemorySampler(*serverPID, 2*time.Second)
 	var result Summary
 	if *tui && isTerminal(stdout) {
 		result, err = runTUI(ctx, config, *prompt, client, tools, trace)
@@ -223,6 +201,10 @@ func cli(parent context.Context, argv []string, stdout, stderr io.Writer) int {
 		}
 	} else {
 		result = runAgent(ctx, config, *prompt, client, tools, trace)
+	}
+	if sampler != nil {
+		stats := sampler.Stop()
+		result.Memory = &stats
 	}
 	data, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {

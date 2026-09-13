@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// TestLiveGemma4TwoStep tests a workflow-level change instead of another edit-loop mechanism:
+// TestLiveModelTwoStep tests a workflow-level change instead of another edit-loop mechanism:
 // split repair into two independent agent calls with no shared conversation state.
 //
 // Step "diagnose": independent navigation (no source preload, no rich-edit-feedback, no
@@ -19,32 +19,32 @@ import (
 // Step "implement": a completely fresh agent call (no memory of step 1's transcript),
 // source-supplied + edit-only tools (the one condition that has produced real edits today),
 // given the step-1 model's OWN diagnosis text — explicitly labeled as self-generated, not
-// evaluator-authored (contrast with GEMMA_DIAGNOSIS_HINT in realrepo_test.go, which is).
+// evaluator-authored (contrast with ANVIL_DIAGNOSIS_HINT in realrepo_test.go, which is).
 //
 // This isolates whether the guided/independent failure mode (never attempting an edit) is a
 // workflow-structure problem (too much state at once) or a genuine navigation/reasoning gap
 // (the model can't produce a useful diagnosis either, even with room to just think).
-func TestLiveGemma4TwoStep(t *testing.T) {
-	if os.Getenv("GEMMA_LIVE") != "1" {
-		t.Skip("opt-in only: GEMMA_LIVE=1; needs an already-running local Gemma server")
+func TestLiveModelTwoStep(t *testing.T) {
+	if os.Getenv("ANVIL_LIVE") != "1" {
+		t.Skip("opt-in only: ANVIL_LIVE=1; needs an already-running local model server")
 	}
-	pilot := os.Getenv("GEMMA_PILOT")
+	pilot := os.Getenv("ANVIL_PILOT")
 	if pilot == "" {
-		t.Fatal("requires GEMMA_PILOT")
+		t.Fatal("requires ANVIL_PILOT")
 	}
-	stage := os.Getenv("GEMMA_REPO_STAGE")
+	stage := os.Getenv("ANVIL_REPO_STAGE")
 	if stage == "" {
 		stage = "dayjs-guided"
 	}
-	endpoint := os.Getenv("GEMMA_LIVE_ENDPOINT")
+	endpoint := os.Getenv("ANVIL_LIVE_ENDPOINT")
 	if endpoint == "" {
 		endpoint = "http://127.0.0.1:8114/v1"
 	}
-	model := os.Getenv("GEMMA_LIVE_MODEL")
+	model := os.Getenv("ANVIL_LIVE_MODEL")
 	if model == "" {
-		model = "gemma4"
+		model = "qwen36-35b-a3b"
 	}
-	output := os.Getenv("GEMMA_LIVE_OUTPUT")
+	output := os.Getenv("ANVIL_LIVE_OUTPUT")
 	if output == "" {
 		output = "live-results"
 	}
@@ -53,10 +53,10 @@ func TestLiveGemma4TwoStep(t *testing.T) {
 	}
 	client := &Client{URL: endpoint, HTTP: &http.Client{}}
 	stageBudget := 120 * time.Second
-	if raw := os.Getenv("GEMMA_STAGE_BUDGET_SECONDS"); raw != "" {
+	if raw := os.Getenv("ANVIL_STAGE_BUDGET_SECONDS"); raw != "" {
 		seconds, err := time.ParseDuration(raw + "s")
 		if err != nil {
-			t.Fatalf("invalid GEMMA_STAGE_BUDGET_SECONDS: %v", err)
+			t.Fatalf("invalid ANVIL_STAGE_BUDGET_SECONDS: %v", err)
 		}
 		stageBudget = seconds
 	}
@@ -99,9 +99,9 @@ func TestLiveGemma4TwoStep(t *testing.T) {
 	// --- Step 2: implement. Fresh state, source-supplied + edit-only, fed step 1's own text. ---
 	root2 := t.TempDir()
 	report2 := filepath.Join(output, "twostep-"+stage+"-oracle.json")
-	os.Setenv("GEMMA_PRELOAD_SOURCES", "1")
+	os.Setenv("ANVIL_PRELOAD_SOURCES", "1")
 	task2, command2, before2 := prepareRepo(t, pilot, stage, root2, report2)
-	os.Unsetenv("GEMMA_PRELOAD_SOURCES")
+	os.Unsetenv("ANVIL_PRELOAD_SOURCES")
 	task2.Report += "\n\nSelf-diagnosis from an earlier independent investigation pass by this " +
 		"same model (not evaluator-authored; verify it by reading the supplied source and testing, " +
 		"not by trusting it alone):\n" + result1.Answer
@@ -129,7 +129,7 @@ func TestLiveGemma4TwoStep(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	changeErr := checkRepoChanges(stage, before2, after2)
+	changeErr := checkRepoChanges(task2, stage, before2, after2)
 	fixed := changeErr == nil
 	reportErr := checkRepoReport(report2, task2, fixed)
 	t.Logf("oracle: changes=%v report=%v (fixed=%v)", changeErr, reportErr, fixed)

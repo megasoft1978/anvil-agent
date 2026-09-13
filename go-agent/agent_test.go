@@ -37,7 +37,7 @@ func newTools(t *testing.T) (*Tools, *bytes.Buffer) {
 }
 
 func config() Config {
-	return Config{Model: "gemma4", MaxTurns: 8, MaxTokens: 3072, MaxHistoryBytes: 64 << 10, RecoverToolCalls: true}
+	return Config{Model: "test-model", MaxTurns: 8, MaxTokens: 3072, MaxHistoryBytes: 64 << 10, RecoverToolCalls: true}
 }
 
 func TestCLIEndToEnd(t *testing.T) {
@@ -563,7 +563,7 @@ func TestRecoveredCallExecutesOnce(t *testing.T) {
 	}
 }
 
-func TestObservedGemma4AgentRegressions(t *testing.T) {
+func TestObservedAgentRegressions(t *testing.T) {
 	for _, fixture := range regressions(t) {
 		t.Run(fixture.Name, func(t *testing.T) {
 			tools, trace := newTools(t)

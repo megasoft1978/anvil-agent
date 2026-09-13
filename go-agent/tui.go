@@ -23,21 +23,21 @@ type agentDoneMsg struct{ result Summary }
 // tuiModel is a thin view over runAgent: it never constructs prompts or reinterprets tool
 // results, it only renders the events runAgent already emits.
 type tuiModel struct {
-	prompt      string
-	model       string
-	repoRoot    string
-	transcript  []string
-	maxLines    int
-	status      string // "waiting for model" | "running: <tool>" | "done" | "error"
-	turns       int
-	toolCalls   int
-	edits       int
-	started     time.Time
-	finished    bool
-	result      Summary
-	width       int
-	height      int
-	cancel      context.CancelFunc
+	prompt     string
+	model      string
+	repoRoot   string
+	transcript []string
+	maxLines   int
+	status     string // "waiting for model" | "running: <tool>" | "done" | "error"
+	turns      int
+	toolCalls  int
+	edits      int
+	started    time.Time
+	finished   bool
+	result     Summary
+	width      int
+	height     int
+	cancel     context.CancelFunc
 }
 
 const tuiMaxTranscriptLines = 2000
@@ -160,7 +160,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m tuiModel) View() string {
 	elapsed := time.Since(m.started).Round(time.Second)
-	header := fmt.Sprintf("gemma-agent  model=%s  repo=%s  elapsed=%s  turns=%d  tools=%d  edits=%d\n",
+	header := fmt.Sprintf("anvil-agent  model=%s  repo=%s  elapsed=%s  turns=%d  tools=%d  edits=%d\n",
 		m.model, m.repoRoot, elapsed, m.turns, m.toolCalls, m.edits)
 	status := "status: " + m.status + "\n"
 	body := strings.Join(m.transcript, "\n")
@@ -204,4 +204,3 @@ func runTUI(ctx context.Context, config Config, prompt string, client *Client, t
 	// the cancelled context and will return promptly once its next ctx.Err() check fires.
 	return <-resultCh, nil
 }
-

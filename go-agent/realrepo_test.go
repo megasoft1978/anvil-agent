@@ -16,18 +16,50 @@ import (
 )
 
 // The pilot is an explicit, trusted local fixture input, not model context.
+//
+// TestCommand and SourceFiles are optional: a task that omits them falls back to the original
+// date-fns/dayjs-specific hardcoded logic below (legacyCommand/legacySource), so the existing
+// EXP-085 pilot manifest (which predates these fields) keeps working unchanged. Any new fixture
+// should set both explicitly rather than relying on the legacy fallback, which only recognizes
+// the two original stage-name prefixes.
 type repoTask struct {
-	Report string            `json:"report"`
-	Tests  map[string]string `json:"test_files"`
-	Fail   []string          `json:"fail_to_pass"`
-	Pass   []string          `json:"pass_to_pass"`
+	Report      string            `json:"report"`
+	Tests       map[string]string `json:"test_files"`
+	Fail        []string          `json:"fail_to_pass"`
+	Pass        []string          `json:"pass_to_pass"`
+	TestCommand []string          `json:"test_command,omitempty"`
+	SourceFiles []string          `json:"source_files,omitempty"`
 }
 
-func repoSource(stage, path string) bool {
+// isSource reports whether path is one of this task's fixable source files: the set the model is
+// allowed to change, used both to decide what to preload as context and to catch a run that
+// edited something out of scope (a test, a config file) instead of the real source.
+func (task repoTask) isSource(stage, path string) bool {
+	if len(task.SourceFiles) > 0 {
+		for _, candidate := range task.SourceFiles {
+			if candidate == path {
+				return true
+			}
+		}
+		return false
+	}
+	return legacySource(stage, path)
+}
+
+func legacySource(stage, path string) bool {
 	if strings.HasPrefix(stage, "date-fns-") {
 		return path == "src/isWithinInterval/index.ts"
 	}
 	return strings.HasPrefix(stage, "dayjs-") && (path == "src/plugin/utc/index.js" || path == "src/index.js")
+}
+
+// legacyCommand reproduces the original hardcoded per-stage test invocation, kept only so the
+// original date-fns/dayjs pilot manifest (which has no test_command field) keeps running.
+func legacyCommand(stage, report string) []string {
+	if strings.HasPrefix(stage, "date-fns-") {
+		return []string{"node", "node_modules/vitest/vitest.mjs", "run", "src/isWithinInterval/test.ts", "--reporter=json", "--outputFile=" + report}
+	}
+	return []string{"node", "node_modules/jest/bin/jest.js", "--runInBand", "--json", "--outputFile=" + report, "--coverageDirectory=" + filepath.Join(filepath.Dir(report), "coverage"), "--", "test/plugin/utc-utcOffset.test.js"}
 }
 
 func repoSnapshot(root string) (map[string][32]byte, error) {
@@ -40,7 +72,14 @@ func repoSnapshot(root string) (map[string][32]byte, error) {
 		if err != nil {
 			return err
 		}
-		if rel == "node_modules" || rel == ".git" {
+		// Skip node_modules/.git wherever they occur, not just at the fixture root: a pnpm/yarn
+		// workspace (observed on zod) has a per-package node_modules too. Each one can be either
+		// a real directory or a symlink (root node_modules is always symlinked in by prepareRepo;
+		// pnpm also symlinks individual workspace packages into each other's node_modules) — a
+		// symlink is not IsDir() under WalkDir's Lstat semantics, so it must be accepted here
+		// rather than falling through to the "must be a regular file" check below, which would
+		// otherwise reject it.
+		if name := entry.Name(); name == "node_modules" || name == ".git" {
 			if entry.IsDir() {
 				return filepath.SkipDir
 			}
@@ -64,9 +103,6 @@ func repoSnapshot(root string) (map[string][32]byte, error) {
 
 func prepareRepo(t *testing.T, pilot, stage, root, report string) (repoTask, []string, map[string][32]byte) {
 	t.Helper()
-	if stage != "date-fns-guided" && stage != "dayjs-guided" && stage != "date-fns-independent" && stage != "dayjs-independent" {
-		t.Fatalf("unknown real-repo stage %q", stage)
-	}
 	data, err := os.ReadFile(filepath.Join(pilot, "manifest.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -118,10 +154,13 @@ func prepareRepo(t *testing.T, pilot, stage, root, report string) (repoTask, []s
 		}
 	}
 	var command []string
-	if strings.HasPrefix(stage, "date-fns-") {
-		command = []string{"node", "node_modules/vitest/vitest.mjs", "run", "src/isWithinInterval/test.ts", "--reporter=json", "--outputFile=" + report}
+	if len(task.TestCommand) > 0 {
+		command = make([]string, len(task.TestCommand))
+		for i, arg := range task.TestCommand {
+			command[i] = strings.ReplaceAll(arg, "{{REPORT}}", report)
+		}
 	} else {
-		command = []string{"node", "node_modules/jest/bin/jest.js", "--runInBand", "--json", "--outputFile=" + report, "--coverageDirectory=" + filepath.Join(filepath.Dir(report), "coverage"), "--", "test/plugin/utc-utcOffset.test.js"}
+		command = legacyCommand(stage, report)
 	}
 	before, err := repoSnapshot(root)
 	if err != nil {
@@ -132,11 +171,11 @@ func prepareRepo(t *testing.T, pilot, stage, root, report string) (repoTask, []s
 		task.Report = task.Report[:index]
 	}
 	task.Report += "\nFix the source, call run_tests to verify, then finish. Do not change tests, configuration, or dependencies."
-	if os.Getenv("GEMMA_PRELOAD_SOURCES") == "1" {
+	if os.Getenv("ANVIL_PRELOAD_SOURCES") == "1" {
 		var paths []string
 		for path := range before {
-			if repoSource(stage, path) {
-				if selected := os.Getenv("GEMMA_PRELOAD_FILE"); selected != "" && selected != path {
+			if task.isSource(stage, path) {
+				if selected := os.Getenv("ANVIL_PRELOAD_FILE"); selected != "" && selected != path {
 					continue
 				}
 				paths = append(paths, path)
@@ -158,9 +197,9 @@ func prepareRepo(t *testing.T, pilot, stage, root, report string) (repoTask, []s
 		}
 		task.Report = context.String() + "\nOriginal task:\n" + task.Report
 	}
-	if hint := os.Getenv("GEMMA_DIAGNOSIS_HINT"); hint != "" {
-		if os.Getenv("GEMMA_PRELOAD_SOURCES") != "1" {
-			t.Fatal("GEMMA_DIAGNOSIS_HINT requires GEMMA_PRELOAD_SOURCES=1 (diagnosis-assisted is a source-supplied condition)")
+	if hint := os.Getenv("ANVIL_DIAGNOSIS_HINT"); hint != "" {
+		if os.Getenv("ANVIL_PRELOAD_SOURCES") != "1" {
+			t.Fatal("ANVIL_DIAGNOSIS_HINT requires ANVIL_PRELOAD_SOURCES=1 (diagnosis-assisted is a source-supplied condition)")
 		}
 		task.Report += "\n\nDiagnosis (evaluator-supplied, not your own independent finding; verify by reading and testing, not by trusting this alone):\n" + hint
 	}
@@ -183,18 +222,51 @@ func checkRepoReport(path string, task repoTask, fixed bool) error {
 	if err := json.Unmarshal(data, &report); err != nil {
 		return err
 	}
-	actual := map[string]string{}
+	// Only tests actually named in fail_to_pass/pass_to_pass are graded; everything else in the
+	// report is ignored. The original design graded every test in the file, which works when
+	// Pass+Fail enumerate the whole (small, curated) suite, as date-fns/dayjs's fixtures do — but
+	// a real repo's own test file can be large and can contain unrelated tests, including (observed
+	// on immer's real suite) two structurally distinct tests that happen to render the same
+	// fullName. pass_to_pass is meant to be a representative regression sample, not a requirement
+	// that the entire file be independently known-clean; scoping the grade to the tracked set is
+	// what makes that true.
+	//
+	// A tracked name can legitimately appear more than once in one report: some real suites
+	// (observed on zod) run every test file across multiple vitest "projects" (type-check, esm,
+	// cjs, ...), so the same logical test executes several times per run. Rather than treat a
+	// repeat as ambiguous, require every occurrence of a tracked name to agree on status — that
+	// still catches genuine flakiness (one project passing, another failing) as a hard error.
+	tracked := map[string]bool{}
+	for _, name := range task.Pass {
+		tracked[strings.TrimSpace(name)] = true
+	}
+	for _, name := range task.Fail {
+		tracked[strings.TrimSpace(name)] = true
+	}
+	actual := map[string][]string{}
 	for _, suite := range report.TestResults {
 		for _, test := range suite.AssertionResults {
 			name := strings.TrimSpace(test.FullName)
-			if _, exists := actual[name]; exists {
-				return fmt.Errorf("duplicate test %q", name)
+			if !tracked[name] {
+				continue
 			}
-			actual[name] = test.Status
+			actual[name] = append(actual[name], test.Status)
 		}
 	}
+	agrees := func(name, want string) bool {
+		statuses := actual[strings.TrimSpace(name)]
+		if len(statuses) == 0 {
+			return false
+		}
+		for _, status := range statuses {
+			if status != want {
+				return false
+			}
+		}
+		return true
+	}
 	for _, name := range task.Pass {
-		if actual[strings.TrimSpace(name)] != "passed" {
+		if !agrees(name, "passed") {
 			return fmt.Errorf("regression/missing test: %s", name)
 		}
 	}
@@ -203,32 +275,18 @@ func checkRepoReport(path string, task repoTask, fixed bool) error {
 		want = "passed"
 	}
 	for _, name := range task.Fail {
-		if actual[strings.TrimSpace(name)] != want {
+		if !agrees(name, want) {
 			return fmt.Errorf("expected %s: %s", want, name)
-		}
-	}
-	for name, status := range actual {
-		if status != "passed" && (fixed || !containsTest(task.Fail, name)) {
-			return fmt.Errorf("unexpected test status %s: %s", status, name)
 		}
 	}
 	return nil
 }
 
-func containsTest(names []string, name string) bool {
-	for _, candidate := range names {
-		if strings.TrimSpace(candidate) == name {
-			return true
-		}
-	}
-	return false
-}
-
-func checkRepoChanges(stage string, before, after map[string][32]byte) error {
+func checkRepoChanges(task repoTask, stage string, before, after map[string][32]byte) error {
 	changed := false
 	for path, hash := range before {
 		if next, exists := after[path]; !exists || next != hash {
-			if !exists || !repoSource(stage, path) {
+			if !exists || !task.isSource(stage, path) {
 				return fmt.Errorf("disallowed change: %s", path)
 			}
 			changed = true
@@ -247,9 +305,9 @@ func checkRepoChanges(stage string, before, after map[string][32]byte) error {
 
 // Run before loading the model. This proves the prepared reports reproduce the original bugs.
 func TestPreparedRealRepoBaselines(t *testing.T) {
-	pilot := os.Getenv("GEMMA_PILOT")
+	pilot := os.Getenv("ANVIL_PILOT")
 	if pilot == "" {
-		t.Skip("requires GEMMA_PILOT prepared pilot directory")
+		t.Skip("requires ANVIL_PILOT prepared pilot directory")
 	}
 	for _, stage := range []string{"date-fns-guided", "dayjs-guided"} {
 		t.Run(stage, func(t *testing.T) {
@@ -303,11 +361,11 @@ func TestRepoGrading(t *testing.T) {
 	}
 	before := map[string][32]byte{"src/isWithinInterval/index.ts": sha256.Sum256([]byte("old")), "test.ts": {}}
 	after := map[string][32]byte{"src/isWithinInterval/index.ts": sha256.Sum256([]byte("new")), "test.ts": {}}
-	if err := checkRepoChanges("date-fns-guided", before, after); err != nil {
+	if err := checkRepoChanges(repoTask{}, "date-fns-guided", before, after); err != nil {
 		t.Fatal(err)
 	}
 	after["test.ts"] = sha256.Sum256([]byte("cheat"))
-	if err := checkRepoChanges("date-fns-guided", before, after); err == nil {
+	if err := checkRepoChanges(repoTask{}, "date-fns-guided", before, after); err == nil {
 		t.Fatal("accepted test tampering")
 	}
 }

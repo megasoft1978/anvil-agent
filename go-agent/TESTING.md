@@ -8,16 +8,16 @@ Environment: Go 1.24.0, macOS/arm64. No model was loaded for this verification.
 | Statement coverage | 88.4% |
 | Parser fuzz campaign | 395,912 executions with two workers; no failures |
 | Static analysis | `go vet ./...` passed |
-| Build | `/tmp/gemma-agent` built; CLI help verified |
-| Live Gemma suite | Read, tiny edit, guided date-fns passed; see below |
+| Build | `/tmp/anvil-agent` built; CLI help verified |
+| Live model suite | Read, tiny edit, guided date-fns passed; see go-agent live-results/ for current runs |
 | Linux runtime | CI configured; not executed on this Mac |
 
 The fake-endpoint integration test exercises the real CLI and worktree: read, exact edit, configured
 test command, ordinary text completion, final verification, and saved before/after evidence. Archived
-EXP-077/081 Gemma output is exercised both through the parser and through the agent loop. No claim
-about live Gemma success rate or speed follows from those tests.
+leaked-markup-format output is exercised both through the parser and through the agent loop. No claim
+about live model success rate or speed follows from those tests.
 
-The suite also covers every byte truncation of a representative Gemma call, duplicate/cross-channel
+The suite also covers every byte truncation of a representative leaked-markup call, duplicate/cross-channel
 spans, conflicting calls, nested values, malformed arguments, file boundaries, special files,
 subprocess descendants, capped output, deadlines, trace failures, and isolated task input.
 
@@ -32,79 +32,6 @@ These are baseline checks, not model-generated fixes. The first dayjs baseline e
 coverage files inside the fixture; coverage output is now directed outside it, retaining coverage.
 The full race-enabled suite passes with both real-repo baseline checks enabled.
 
-## First live real-repo success
-
-Full-context optimized `gemma-4-26B-A4B-it-UD-IQ2_M-attnQ4K.gguf`, 24,576 context,
-kit server flags, temperature 0, 120-second per-stage deadlines. Paging was explicitly allowed by
-the user and did increase; elapsed times below are observations, not clean performance benchmarks.
-
-The initial JSON-wrapped file results stalled on three identical reads in guided date-fns. A repeat
-warning alone also stalled. After changing file results to literal source text (retaining that warning),
-all three stages passed in `live-results/guarded-20260910T230934`:
-
-| Stage | Result | Agent elapsed |
-|---|---|---|
-| Read and finish | Correct random marker; 1 native tool call | 7.9s |
-| Tiny edit and test | Fixed addition; final verification passed | 43.8s |
-| Guided date-fns | Numeric sort comparator; 1 fail-to-pass, 10 pass-to-pass; only source changed | 55.5s |
-
-This is one successful real-repo attempt, not an established success rate. XML follow-up results are below.
-Raw requests, responses, and source edit backups persist in that run's traces. Its oracle report was
-temporary; later runs now preserve real-repo oracle JSON outside the disposable worktree as well.
-The server's rendered prompt was inspected: OpenAI-style tool results map to native Gemma
-`tool_response` blocks. The Go loop uses its own bounded recovery and repeat warning, not Pi extensions.
-The full race-enabled offline suite passes after these changes.
-
-The next baseline guided-dayjs attempt (`guarded-20260910T231206`) timed out at 120s with
-10 tool calls and no edits, including malformed output and incorrect pagination. Both smoke stages
-passed. A selectable focused initial prompt is being evaluated against this failure; the baseline
-remains the default until there is evidence to promote the candidate.
-
-Focused prompt attempt `guarded-20260910T232155`: read passed; tiny edit passed with 4 tool calls
-(baseline used 6); guided dayjs still timed out at 120s with 7 tool calls and no edits. The candidate
-is not promoted. Paging increased, so elapsed-time comparisons are not controlled speed evidence.
-
-XML attempt `guarded-20260910T232741` passed both smoke tests but timed out on dayjs with 8 tool calls
-and no edits. XML has not demonstrated an improvement; literal text remains the default.
-
-On September 11, enabling reasoning with a 128-token budget (`guarded-20260911T065644`) also timed out
-on dayjs: 5 tool calls, no edits. The tiny edit passed in 63s. This changes the kit's reasoning-off
-condition and is not promoted. Its read response included the correct marker plus metadata, which
-the current smoke assertion permits; it was not an exact-content-only response.
-
-Test-first prompt (`guarded-20260911T070029`) exposed the concrete dayjs failure to the model but
-still timed out with 8 calls and no edits. Enabling equivalent-offset normalization and unchanged-read
-references (`guarded-20260911T070414`) caught duplicate requests correctly; dayjs stopped as stalled
-after 104.4s, 10 calls, no edits. Neither option is promoted as a solution.
-
-File search plus test-first (`guarded-20260911T070719`) timed out with 8 calls and no edits; the model
-did not use the optional search tool. Google-recommended sampling (temperature 1, top-p .95, top-k 64,
-with llama.cpp min-p disabled and seed 42) plus baseline prompt (`guarded-20260911T071118`) timed out
-with 7 calls and no edits. Repeating that sampling/prompt condition on the original pre-requantization
-IQ2_M file (`guarded-20260911T071438`) timed out with 10 calls and no edits. These single attempts do
-not establish comparative success rates or isolate all sources of variability; they do not support
-claiming any of these options solves dayjs.
-
-Task reminders (`guarded-20260911T071752`) reduced the tiny fixture to 3 calls, but dayjs still timed
-out with 6 calls and no edits. Supplying both complete source files up front, with normal tools
-(`guarded-20260911T072205`), also timed out: 4 calls, no edits; the model reread supplied source.
-These source-provided trials are a more guided diagnostic condition, not independent navigation.
-
-Source-provided edit/test-only mode (`guarded-20260911T072554`) produced two actual edits but timed
-out before verification. Postmortem replay of confirmed edits preserved the original failure
-(1 failed, 12 passed); it did not fix the bug. With only the UTC plugin supplied
-(`guarded-20260911T073104`), the model reached a failing test after an edit, then repeated invalid/no-op
-edits and stalled after 51s. Restricting reads enables patch attempts, but has not yet yielded a correct fix.
-
-With the UTC plugin supplied, edit/test-only tools, a 512-token reasoning budget, and
-`preserve_tool_reasoning=true` (`guarded-20260911T073629`), the model ran a test then attempted an edit
-before timing out at 120s. The edit itself removed the function-wide `let ins = this` and declared
-`const ins` inside one branch, leaving every other branch with `ReferenceError: ins is not defined`
-— a scope-narrowing mistake, not a semantics mistake. Postmortem replay of that confirmed edit
-(`live-results/guarded-20260911T073629/traces/20260911T053805Z-816722671/postmortem-3018661895/`)
-is 12 failed/1 passed: worse than baseline. Pageouts rose during this run. This is the concrete case
-the 2026-09-11 `-rich-edit-feedback` change targets: keeping enough surrounding source context that a
-scope-changing edit is visible as such, rather than silently accepting a narrowed declaration.
 
 ## 2026-09-11 offline changes (no live model; see SESSION-2026-09-11/NEXT.md for detail)
 
@@ -118,8 +45,7 @@ Four opt-in changes, all off by default, full suite 138/138 (was 135), `go vet` 
 - `-auto-test-after-edit`: runs the configured test command immediately after a successful edit and
   feeds the result back, instead of requiring the model to remember to call `run_tests`. Not yet
   tested live.
-- `search` is now repository-wide by default (was single-file-only, and unused in every dayjs attempt
-  above). Skips `.git`/`node_modules`/`dist`/`build`/`.next`/`vendor`/`target`/`__pycache__`/`.cache`
+- `search` is now repository-wide by default (was single-file-only). Skips `.git`/`node_modules`/`dist`/`build`/`.next`/`vendor`/`target`/`__pycache__`/`.cache`
   and unreadable/binary files; bounded to 20 matches / 4000 files scanned. A single-file `path` still
   works as before.
 - `--tui`: a first-version Bubble Tea terminal UI (`github.com/charmbracelet/bubbletea` v1.3.4),
@@ -131,70 +57,119 @@ Four opt-in changes, all off by default, full suite 138/138 (was 135), `go vet` 
   Driving `tea.Program.Run()` through piped (non-PTY) I/O hangs indefinitely, so the repo test
   suite (`tui_test.go`) covers the model/Sink logic only, not a full `Program.Run()`.
 
-None of these four changes have a live-Gemma result yet. They are the plumbing the next guided
-dayjs attempt needs, not evidence themselves.
+These changes have not yet been live-tested against the current target model (Qwen3.6-35B-A3B).
 
-## 2026-09-12 live evaluation: model comparison, dayjs still unsolved, two root causes isolated
+## Planned validation — Qwen3.6-35B-A3B (current target, only model this project tracks)
 
-Live-tested `-rich-edit-feedback` and `-auto-test-after-edit` for the first time, added a fifth
-opt-in change (`-detect-repeated-edits`), and ran the guided/independent stages against five
-additional models beyond `gemma-4-26B-A4B-it-UD-IQ2_M-attnQ4K.gguf`, all through the same harness
-and oracle. Every result below was independently re-verified this session (baselines re-run,
-edits re-applied to a fresh worktree copy and graded against the real Jest/vitest command), not
-assumed from a model's own claimed "tests passed" text.
+Every `SERVER_FLAGS` choice in `setup.sh` and every rejected lever in this project's history was tuned
+or tested against a different, now-abandoned target model. None of it is assumed to still hold. This
+is the open punch list, ordered by expected value, each with what would settle it:
 
-**Models tried:** `gemma-4-26B-A4B-it-UD-IQ2_M-attnQ4K.gguf` (MoE, local, this kit's target model),
-`unsloth/Qwen3.8-27B-GGUF` at `UD-Q2_K_XL` (9.83GB) and `UD-IQ2_XXS` (7.27GB), `Qwen2.5-Coder-7B-`
-and `-14B-Instruct-GGUF` at `Q4_K_M`, `unsloth/gemma-4-E4B-it-GGUF` at `Q4_K_M`. Server flags and
-port unchanged from the kit defaults; context dropped to 8192 only where a model's KV cache did not
-fit at 24576 on this machine's memory ceiling.
-
-**Guided date-fns:** gemma4 attnQ4K passes at 120s (unchanged from September 10). Qwen3.8-27B
-Q2_K_XL passes but needs ~240s, not 120s — added `GEMMA_LIVE_TIMEOUT` (default unchanged at 120s)
-to `live_test.go` so a live run can override the hardcoded per-stage deadline for slower models.
-Qwen2.5-Coder-7B and -14B are untestable in this harness: both emit ad-hoc XML-ish tool-call
-syntax (`<function name="..."/>`, `<tools>{...}</tools>`) instead of a real `tool_calls` response,
-confirmed via `--log-prompts-dir` that the rendered prompt correctly includes the Hermes-style
-`<tool_call>` instructions — the model simply does not follow its own chat template. Same defect
-at both sizes. `gemma-4-E4B-it` Q4_K_M produces a wrong fix (`Math.min`/`Math.max` instead of a
-numeric-sort comparator) and confabulates "tests passed" while its own verification exit code was 1.
-`IQ2_XXS` degrades coherence rather than improving speed: one 180s attempt generated 2,000+ tokens
-without ever completing a turn.
-
-**Guided dayjs:** unsolved by every combination above, and by every `-edit-only`/`-preload-sources`
-config tried, at budgets from 120s up to 2,160s (36 minutes). Qwen3.8-27B Q2_K_XL in edit-only mode
-is the one model that ever produces a real edit attempt: it independently identifies dayjs's actual
-`$x.$localOffset` clone-tracking mechanism (confirmed against the true upstream fix,
-`iamkun/dayjs@fefdcd4`) and gets accurate `run_tests` feedback after every edit via
-`-auto-test-after-edit`, including a concrete regression signal when one attempt broke a
-previously-passing test. Despite that, across a 25-minute and a 36-minute run it cycles through
-the same 2-3 hypotheses (apply → see it doesn't fix the target test → revert → re-apply the
-identical edit again later in the same run) rather than converging. `-detect-repeated-edits`
-(new this session) confirmed this precisely: it fired correctly when the model re-proposed an
-edit identical to one already applied and reverted earlier in the run, and the model repeated the
-edit anyway immediately after being told so in plain text. More time does not help; the 36-minute
-run's later edits are byte-for-byte repeats of its own first three.
-
-**Guided vs. independent (no relevant-file hint):** date-fns-independent isolates diagnosis from
-repair. Qwen3.8-27B independently locates `src/isWithinInterval/index.ts` and its `toDate` import
-in 4 calls, comparable in efficiency to the guided run, but times out at 300s before emitting the
-edit call — inference speed, not navigation, is the constraint. gemma4 attnQ4K stalls in 47s (well
-under its 120s budget, ruling out speed as the cause here): it finds the correct source file on
-its first attempt, then guesses a plausible-but-wrong test path
-(`test/isWithinInterval/index.test.ts`), lists `test/` and receives clear proof the guess is wrong
-(only `dst/`, `formatISO/`, `formatRFC3339/` exist there), and repeats the same disproven path two
-more times anyway — triggering the harness's three-identical-calls stall. It never revisits the
-sibling `test.ts` next to the `index.ts` it had already read three calls earlier.
-
-**Conclusion — two distinct, non-overlapping bottlenecks, not one:**
-- gemma4-26B-A4B: a genuine failure to incorporate a directly disconfirming tool result into its
-  next action. Fast, but gets stuck on the first wrong turn regardless of budget.
-- Qwen3.8-27B UD-Q2_K_XL: navigates and self-corrects correctly using real test feedback, but is
-  too slow on this hardware (M1, 16GB) to finish either diagnosis or repair inside a practical
-  time budget.
-
-Neither is fixed by the four September 11 changes or by `-detect-repeated-edits`; both are
-model/hardware limits, not interface gaps. `-rich-edit-feedback`, `-auto-test-after-edit`, and
-`-detect-repeated-edits` all now have live confirmation that they fire and deliver correct
-information — the remaining gap is that the model doesn't act on it, not that the harness fails
-to supply it.
+1. **Thinking mode (done, negative result, 2026-09-12).** A/B'd the model's own documented
+   thinking-mode-for-code sampling (temp 0.6, top_p 0.95, presence_penalty 0.0) against the
+   non-thinking default on a real blind repo-navigation-then-fix task (dayjs). Same outcome as
+   non-thinking: 6 turns, 0 edits, truncated at 300s — actual reasoning-token output was near-zero
+   on 4 of 6 turns. Single run (stochastic, n=1); doesn't rule out thinking mode, but gives no
+   support for it either. Not adopted as the default.
+2. **`--cache-reuse` (done, confirmed still disabled, 2026-09-12, different reason than before).**
+   The old "disabled" rationale was Gemma-4-specific (sliding-window-attention) and doesn't describe
+   this model. Checked the one real risk on record — llama.cpp issue ggml-org/llama.cpp#23589, a
+   KV-cache-drop regression specific to Qwen3.6 — and confirmed it was fixed by PR #24110 as of
+   build b9518 (installed `llama-server` here is b10809, well past the fix). Tried enabling it
+   anyway (`--cache-reuse 256`), including with `--kv-unified` forced on (in case slot-count
+   auto-detection was the blocker, since the flag's default depends on that) — server logs
+   `cache_reuse is not supported by this context, it will be disabled` in both cases. Root cause is
+   architectural, not the old SWA reason nor a KV-unified setting: Qwen3.6-35B-A3B's hybrid Gated
+   DeltaNet (linear-attention/recurrent-state) layers don't support the KV-shifting mechanism
+   cache-reuse depends on. Confirmed no-op; not worth revisiting unless the model architecture or
+   llama.cpp's DeltaNet support changes.
+3. **`--ctx-checkpoints 0 --cache-ram 0` — done, real regression found and fixed (2026-09-12).**
+   These measured a 4.87→1.02GB memory win with "no change in generation speed" on Gemma-4. On
+   Qwen3.6-35B-A3B they cause something much worse than "the memory win evaporates": confirmed via
+   `llama-server`'s own `timings.cache_n` per request that with these flags set, the SAME identical
+   agentic task (immer fixture, blind, seed-fixed, byte-identical trajectory reproduced twice)
+   periodically discards its entire prompt-prefix cache and re-prefills the whole accumulated
+   conversation from scratch, instead of extending it incrementally — two full resets in one
+   11-turn run, one of them an 8801-token re-prefill costing 81 real seconds by itself (more than a
+   quarter of a 300s budget). Removing both flags: `cache_n` grew monotonically for all 16 turns of
+   the identical task with zero resets, and the run covered 16 turns in 245s instead of 11-12 turns
+   in the full 300s — a large, direct, measured speed win. Real memory cost: server RSS grew from
+   ~8.8GB to ~11.2GB over a longer 16-turn conversation on the same box — still fits in 16GB, less
+   headroom for other apps. `setup.sh`'s `SERVER_FLAGS`/`CHECK_STRINGS` updated to drop both flags.
+   First tested with `--cache_prompt: true` added explicitly to the harness's own request body as a
+   cheaper candidate fix — zero effect, trace was byte-identical before and after, ruling that out
+   before finding the real cause.
+4. **MTP speculative decoding.** `--spec-type draft-mtp --spec-draft-n-max 3`, fully merged in
+   llama.cpp (PR #22673), needs a separate `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` download (~11.5GB) and
+   verifying its quant is comparable to the currently-used UD-IQ2_M. Real-world reports: ~75%
+   acceptance, 2x+ generation speedup, no accuracy regression. Settle with: download, then a repeat
+   of the same live real-repo scenario, comparing tok/s and pass/fail against the non-MTP baseline.
+   Do this only after the dayjs finding below is understood — faster wrong output is still wrong.
+5. **`-c 24576` sizing and `max_tokens` 3072→4096.** Cheap headroom check now that KV cost is small;
+   settle with a memory-log read at a larger context, no benchmark re-run needed unless memory is
+   tight.
+6. **Rejected-lever re-checks specific to this model, not inherited from Gemma-4's suite:** a
+   stronger prompt demanding every file get touched, a few-shot prompt example — both were
+   model/prompt-specific findings on Gemma-4, unverified for Qwen3.6-35B-A3B. Quantizing MoE experts
+   further and alternative quants are architecture-general findings (unlikely to flip) and lower
+   priority to re-run.
+7. **Headline finding, well-replicated (2026-09-12): explores well, essentially never commits to
+   an edit within a ~300s budget — on two different real bugs, four different conditions.** dayjs
+   (blind@180s, blind@300s, full-source-preload@300s, narrow-preload@300s, thinking-mode@300s): 0
+   edits in 4 of 5 trials; preloaded, 1 edit attempt (turn 6) but ran out of time before
+   verification. immer (a much simpler, single-file, 6-line real fix — not dayjs's cross-file
+   subtlety), blind@300s, twice: 0 edits both times, 11 tool calls each, all reads. The second
+   immer trial had the harness's `search` tool newly enabled (see below) plus a system-prompt nudge
+   to prefer it over full-file reads — no behavior change, the model never called it.
+   Navigation itself is good: on both immer trials the model found the actual fix-relevant files
+   unprompted within the first 4-6 calls (`arrayMethods.ts`, the real fix location, plus
+   `patches.ts`/`proxy.ts`, both cited in the real PR's own root-cause explanation) — it just kept
+   reading past that point instead of acting.
+   **Real per-turn timing data (not estimated) shows the bottleneck is prefill, not decode/
+   "thinking too long":** decode is fast and small every turn (2-4s, 24-44 completion tokens);
+   one single turn's 8050-token prompt took 77.5 real seconds to prefill (~100 tok/s prefill
+   throughput at this quant) vs 3.8s to generate that turn's short reply. Across ~11 turns of
+   reads, cumulative prefill cost of a growing transcript is enough on its own to consume the whole
+   300s budget, independent of how much the model "deliberates." This reframes the MTP lever
+   (item 4): MTP speeds up decode, and decode is not the bottleneck here, so it may not address
+   this specific problem even though it's still worth testing for the tasks where it is generation-
+   bound.
+   **Update after fixing item 3 (the cache-reset bug):** re-ran the identical immer task with
+   `--ctx-checkpoints 0 --cache-ram 0` removed. It got noticeably further — 16 turns in 245s instead
+   of 11-12 turns in a full 300s, hitting `turn_limit` (not the time deadline) for the first time —
+   and STILL made zero edits, still just read 16 times. This cleanly isolates the finding: it was
+   never purely a time-budget artifact of the cache bug. Given genuinely more usable turns in the
+   same wall-clock budget, the model still doesn't act. The "explores well, never commits" pattern
+   is real model/prompt behavior, not (or not only) a harness inefficiency.
+   Consulted Opus 5, who recommended a turn-count-triggered (not time-triggered) forced edit-only
+   window once N reads have happened with no edit, mirroring the exact `closeOutReserve` pattern.
+   **Implemented and live-tested (2026-09-12): it works.** After 5 reads with no edit, `read`/
+   `search` are stripped from the declared tools for that turn (reapplied every turn until an edit
+   happens, not a permanent ban) — see `forceEditAfterReads`/`readsSinceEdit` in `agent.go`. Re-ran
+   the identical immer task: the window fired 3 times; the model tried `run_tests` twice (a
+   legitimate action, not a workaround) before finally making a real edit to the correct file
+   (`arrayMethods.ts`) on the third forced turn — the first edit of any kind across 8 live trials
+   today. The specific fix was **wrong** (it invented a different mechanism — marking `"length"` as
+   reassigned on `pop` — instead of the real fix, stringifying the inserted index) and `run_tests`
+   correctly reported `exit_code=1` three times; the model then went back to reading
+   (`src/internal.ts`) to reinvestigate, and ran out of time mid-reinvestigation
+   (`status:"truncated"`, "insufficient time remaining for another turn").
+   This is a qualitatively different, more ordinary failure mode than before: a real
+   edit-test-diagnose loop now runs, and it failed on *fix correctness*, not on *ever attempting a
+   fix*. `readCache`/read-dedup and the ledger already prevent the forced window from just
+   repeating a past failed edit; this wasn't observed to loop.
+   **Follow-up at 600s budget (2026-09-12):** hit `turn_limit` (16 turns) at 467s — well under the
+   600s budget, so `MaxTurns` is now the binding constraint, not time. Made a SECOND, different
+   edit attempt after the first one's `run_tests` came back failing again (targeting the
+   pop-then-push overlap case differently, still not the real fix — stringifying the inserted
+   index — which needs noticing a string-vs-number key mismatch in `patches.ts`, a file this run
+   didn't revisit after its first pass, unlike the very first blind trial which did read it). Two
+   genuine edit-test-reinvestigate cycles in one run, still no convergence in 16 turns. Next lever
+   for this specific question is turn budget (`MaxTurns`), not time or the force-edit mechanism
+   itself, which is doing its job.
+8. **`search` tool enabled by default (2026-09-12).** Was fully implemented and tested
+   (`search_test.go`) but silently left off after an earlier CLI simplification — `Tools.SearchEnabled`
+   defaulted to `false` and nothing in `main.go` set it. Now on by default, with a system-prompt line
+   encouraging it over full-file reads for large files. One live trial so far (immer, above): the
+   model didn't use it. Real bug fixed regardless of whether it changes behavior — a working,
+   tested capability should not be silently unavailable.

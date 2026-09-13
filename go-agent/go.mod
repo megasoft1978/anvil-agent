@@ -1,4 +1,4 @@
-module gemma4-coding-kit/go-agent
+module anvil-agent/go-agent
 
 go 1.24.0
 

@@ -38,7 +38,7 @@ func TestCLIInvalidInputs(t *testing.T) {
 }
 
 func TestCLIPromptProvenanceAndPrivateArtifacts(t *testing.T) {
-	t.Setenv("GEMMA_API_KEY", "fixture-secret-never-log")
+	t.Setenv("ANVIL_API_KEY", "fixture-secret-never-log")
 	dir := t.TempDir()
 	root := filepath.Join(dir, "work")
 	output := filepath.Join(dir, "runs")

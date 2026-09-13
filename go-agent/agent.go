@@ -78,10 +78,37 @@ type Summary struct {
 	EditedFiles  []string       `json:"edited_files"`
 	Verification *CommandResult `json:"verification,omitempty"`
 	WallMS       int64          `json:"wall_ms"`
+	Metrics      *Metrics       `json:"metrics,omitempty"`
+	Memory       *MemoryStats   `json:"memory,omitempty"`
+}
+
+// Metrics aggregates the per-response usage/timings llama-server already returns (and this
+// harness already traces raw, per response, in the "response" event) into one run-level summary.
+// Token counts and generation speed answer "how much would this run actually cost/take," which
+// wall_ms and tool_calls alone don't: a run can have few tool calls but many regenerated tokens.
+type Metrics struct {
+	PromptTokens       int     `json:"prompt_tokens"`
+	CompletionTokens   int     `json:"completion_tokens"`
+	TokensPerSecGen    float64 `json:"tokens_per_sec_gen,omitempty"`
+	TokensPerSecPrompt float64 `json:"tokens_per_sec_prompt,omitempty"`
+	MedianTurnMS       int64   `json:"median_turn_ms,omitempty"`
+}
+
+type responseUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+}
+
+type responseTimings struct {
+	PromptN     int     `json:"prompt_n"`
+	PromptMS    float64 `json:"prompt_ms"`
+	PredictedN  int     `json:"predicted_n"`
+	PredictedMS float64 `json:"predicted_ms"`
 }
 
 const systemPrompt = `You are a coding agent working inside one repository.
 Use read to inspect files or list directories (path "."). Use edit to fix source with an exact replacement.
+Use search to find a function or symbol by name before reading a large file end to end; prefer it over paginating through a whole file when you only need one part of it.
 Use run_tests if available; its command is already configured. Do not invent shell tools or tool arguments.
 Make one tool call at a time. Do not repeat identical reads or test invocations without new information.
 For bug-fix tasks, edit the source rather than only describing a diagnosis. Preserve existing tests.
@@ -117,11 +144,25 @@ edit takes path, oldText, and newText; copy oldText exactly from the source. run
 func runAgent(ctx context.Context, config Config, prompt string, client *Client, tools *Tools, trace *Trace) (result Summary) {
 	start := time.Now()
 	result.Status = "error"
+	var lastFinishReason string
+	var turnDurations []time.Duration
+	var promptTokensTotal, completionTokensTotal, promptNTotal, predictedNTotal int
+	var promptMSTotal, predictedMSTotal float64
 	defer func() {
 		if ctx.Err() != nil {
 			result.Status = "timeout"
 			if ctx.Err() == context.Canceled {
 				result.Status = "cancelled"
+			} else if lastFinishReason == "tool_calls" {
+				// The last thing that happened before the deadline was the model making
+				// another tool call, not a self-declared completion: this run never reached
+				// a state where it could see its own final edit's test result and react.
+				// That is a void measurement of the model, not a real pass/fail — the
+				// close-out reserve below exists to make this rare in new runs, but a run
+				// under the old behavior (or one where the reserve estimate was still wrong
+				// on turn 1-3) still needs a status that says "re-run me" rather than
+				// silently scoring as a capability failure.
+				result.Status = "truncated"
 			}
 			result.Error = ctx.Err().Error()
 		}
@@ -131,6 +172,19 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 			result.EditedFiles = append(result.EditedFiles, path)
 		}
 		sort.Strings(result.EditedFiles)
+		if promptTokensTotal > 0 || completionTokensTotal > 0 {
+			metrics := &Metrics{PromptTokens: promptTokensTotal, CompletionTokens: completionTokensTotal}
+			if predictedMSTotal > 0 {
+				metrics.TokensPerSecGen = float64(predictedNTotal) / predictedMSTotal * 1000
+			}
+			if promptMSTotal > 0 {
+				metrics.TokensPerSecPrompt = float64(promptNTotal) / promptMSTotal * 1000
+			}
+			if len(turnDurations) > 0 {
+				metrics.MedianTurnMS = medianDuration(turnDurations).Milliseconds()
+			}
+			result.Metrics = metrics
+		}
 		if err := trace.Event("summary", result); err != nil {
 			result.Status = "trace_error"
 			result.Error = err.Error()
@@ -156,13 +210,99 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 	repeats := 0
 	bannedTool := ""
 	completionRetries := 0
+	readsSinceEdit := 0
 	const maxCompletionRetries = 2
+	const minCloseOutReserve = 10 * time.Second
+	// Live evidence (2026-09-12, TESTING.md item 7): given a real bug and enough turns to act,
+	// this model reliably finds the right file within 4-6 calls, then keeps reading anyway instead
+	// of committing to an edit -- reproduced on two different real repos, across five conditions,
+	// including a run where fixing an unrelated cache-reset bug freed up 16 usable turns in the
+	// same wall-clock budget and it still made zero edits. Text warnings are on record as not
+	// changing this model family's next-turn behavior on a related problem (the repeat-call
+	// stall); only removing a tool from the declared list did. This mirrors that same structural
+	// pattern, triggered by a read/search count instead of remaining time.
+	const forceEditAfterReads = 5
 	for turn := 1; turn <= config.MaxTurns; turn++ {
 		if err := ctx.Err(); err != nil {
 			result.Error = err.Error()
 			return
 		}
-		request := Request{Model: config.Model, Messages: messages, Tools: toolDefinitions(len(tools.TestCommand) > 0, tools.SearchEnabled), ToolChoice: "auto", MaxTokens: config.MaxTokens, Temperature: config.Temperature, TopP: config.TopP, TopK: config.TopK, PresencePenalty: config.PresencePenalty, RepeatPenalty: config.RepeatPenalty, Seed: config.Seed}
+		turnStart := time.Now()
+		recordTurn := func() {
+			turnDurations = append(turnDurations, time.Since(turnStart))
+			if len(turnDurations) > 3 {
+				turnDurations = turnDurations[len(turnDurations)-3:]
+			}
+		}
+		closeOutReserve := false
+		if deadline, ok := ctx.Deadline(); ok {
+			remaining := time.Until(deadline)
+			if remaining <= 0 {
+				result.Status = "truncated"
+				result.Error = "no time remaining before deadline"
+				return
+			}
+			if len(turnDurations) > 0 {
+				typical := medianDuration(turnDurations)
+				if remaining < typical {
+					// Rather than dispatch a request the harness already knows it can't
+					// see the response to before the deadline cuts it off mid tool-call,
+					// stop now with a status that says "re-run me", not a capability
+					// failure the model never got a chance to avoid.
+					result.Status = "truncated"
+					result.Error = "insufficient time remaining for another turn"
+					return
+				}
+				// Reserve 3 turns' worth of typical time so the model gets a real
+				// verify-and-react cycle before the deadline, not just one last edit
+				// it never sees the result of.
+				reserve := typical * 3
+				if reserve < minCloseOutReserve {
+					reserve = minCloseOutReserve
+				}
+				closeOutReserve = remaining < reserve
+			}
+		}
+		request := Request{Model: config.Model, Messages: messages, Tools: toolDefinitions(len(tools.TestCommand) > 0, tools.SearchEnabled), ToolChoice: "auto", MaxTokens: config.MaxTokens, Temperature: config.Temperature, TopP: config.TopP, TopK: config.TopK, PresencePenalty: config.PresencePenalty, RepeatPenalty: config.RepeatPenalty, Seed: config.Seed, CachePrompt: true}
+		if readsSinceEdit >= forceEditAfterReads {
+			// Force-edit window: enough reads have happened with no edit that further reading is
+			// unlikely to be the missing ingredient (see forceEditAfterReads above). Remove read
+			// and search for this one turn so the model's only options are edit, run_tests (if
+			// configured), or finishing -- not a permanent ban, since a large repo can legitimately
+			// need more than this many reads; it reapplies every turn until an edit happens.
+			var editOnly []ToolDefinition
+			for _, tool := range request.Tools {
+				if tool.Function.Name == "edit" || tool.Function.Name == "run_tests" {
+					editOnly = append(editOnly, tool)
+				}
+			}
+			if len(editOnly) > 0 {
+				request.Tools = editOnly
+				if err := trace.Event("force_edit_window", map[string]int{"reads_since_edit": readsSinceEdit}); err != nil {
+					result.Error = err.Error()
+					return
+				}
+			}
+		}
+		if closeOutReserve {
+			// Close-out reserve: time is short enough that another edit could not be
+			// verified before the deadline. Removing the tool (not just warning against
+			// it) forces the model toward run_tests and a final answer, reusing the same
+			// structural-ban pattern already proven against the repeat-request stall below.
+			var withoutEdit []ToolDefinition
+			for _, tool := range request.Tools {
+				if tool.Function.Name != "edit" {
+					withoutEdit = append(withoutEdit, tool)
+				}
+			}
+			if len(withoutEdit) > 0 {
+				request.Tools = withoutEdit
+				if err := trace.Event("close_out_reserve", nil); err != nil {
+					result.Error = err.Error()
+					return
+				}
+			}
+		}
 		if tools.ReadDisabled {
 			var enabled []ToolDefinition
 			for _, tool := range request.Tools {
@@ -217,7 +357,24 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 			result.Error = err.Error()
 			return
 		}
+		if len(response.Usage) > 0 {
+			var usage responseUsage
+			if json.Unmarshal(response.Usage, &usage) == nil {
+				promptTokensTotal += usage.PromptTokens
+				completionTokensTotal += usage.CompletionTokens
+			}
+		}
+		if len(response.Timings) > 0 {
+			var timings responseTimings
+			if json.Unmarshal(response.Timings, &timings) == nil {
+				promptNTotal += timings.PromptN
+				promptMSTotal += timings.PromptMS
+				predictedNTotal += timings.PredictedN
+				predictedMSTotal += timings.PredictedMS
+			}
+		}
 		choice := response.Choices[0]
+		lastFinishReason = choice.FinishReason
 		if choice.FinishReason == "length" {
 			result.Status = "truncated"
 			result.Error = "token limit reached; no tool executed"
@@ -261,6 +418,7 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 					result.Error = err.Error()
 					return
 				}
+				recordTurn()
 				continue
 			}
 		}
@@ -313,6 +471,7 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 							result.Error = err.Error()
 							return
 						}
+						recordTurn()
 						continue
 					}
 				}
@@ -327,6 +486,12 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 		}
 		if call.ID == "" {
 			call.ID = fmt.Sprintf("call_%d", turn)
+		}
+		switch call.Function.Name {
+		case "read", "search":
+			readsSinceEdit++
+		case "edit":
+			readsSinceEdit = 0
 		}
 		var args any
 		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
@@ -498,7 +663,16 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 			}
 			bannedTool = call.Function.Name
 		}
+		recordTurn()
 	}
 	result.Status = "turn_limit"
 	return
+}
+
+// medianDuration returns the middle value of durations, or the smaller of two when there
+// are exactly two (a defensible reserve estimate without needing a full 3-sample history).
+func medianDuration(durations []time.Duration) time.Duration {
+	sorted := append([]time.Duration(nil), durations...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+	return sorted[len(sorted)/2]
 }

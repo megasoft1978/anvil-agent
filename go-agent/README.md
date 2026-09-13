@@ -1,13 +1,14 @@
-# Coding harness (targets Qwen3-30B-A3B)
+# go-agent
 
 A small Go agent for controlled coding experiments against an already-running local llama-server.
-No external Go dependencies, Pi extensions, model downloads, server management, UI, or ambient project
-instructions. Go 1.24+, macOS or Linux. Existing kit installation and Pi defaults are unchanged.
+No external Go dependencies, model downloads, server management, or ambient project instructions.
+Go 1.24+, macOS or Linux.
 
-Tuned for `Qwen3-30B-A3B-Instruct-2507` (MoE, ~3B active params) after live testing against real
-upstream bugs (see TESTING.md) showed it, not Gemma 4, is the best model this hardware can run for
-real-repo work. `--recover-gemma` support and Gemma-specific sampling/prompt profiles are gone; the
-harness is a single fixed configuration rather than a matrix of opt-in experiments.
+Sampling defaults and prompt profile are selected per `--model` from `profiles.go` (a small registry,
+one entry per model this harness has been tuned against; unknown models fall back to a conservative
+default) rather than hardcoded in `main.go` -- see that file for how to add a model. Tool-call recovery
+is separate and model-agnostic by construction: `recovery_registry.go` selects a parser by the shape of
+a malformed response, not by which model is declared.
 
 The loop sends OpenAI-compatible chat requests with `tool_choice: "auto"` and
 `parallel_tool_calls: false`. It executes one tool at a time and finishes on an ordinary text reply.
@@ -19,10 +20,10 @@ cannot stop a model's generation loop early. Live quality and speed are not yet 
 From this directory:
 
 ```sh
-go build -o /tmp/gemma-agent .
-gemma_work=$(mktemp -d)
-cp testdata/tiny-edit/sum.mjs testdata/tiny-edit/test.mjs "$gemma_work/"
-/tmp/gemma-agent --root "$gemma_work" \
+go build -o /tmp/anvil-agent .
+work=$(mktemp -d)
+cp testdata/tiny-edit/sum.mjs testdata/tiny-edit/test.mjs "$work/"
+/tmp/anvil-agent --root "$work" \
   --prompt 'Fix sum.mjs so it adds its arguments. Run the tests, then finish.' \
   --test-command '["node","test.mjs"]' --output ./runs
 ```
@@ -32,8 +33,9 @@ Do not load it until the machine has enough RAM. The harness does not quit appli
 server flags. Dependencies for real-repo tasks must be installed before model residency.
 
 Default limits: 120 seconds **total**, including model requests, tools, and final verification;
-30 seconds per test command; 16 model requests; 8,192 output tokens per request; temperature 0.
-`--help` lists overrides. Supply `GEMMA_API_KEY` only if the endpoint requires authentication.
+30 seconds per test command; 16 model requests; 8,192 output tokens per request; sampling per the
+target model's own profile in `profiles.go` (not greedy decoding by default).
+`--help` lists overrides. Supply `ANVIL_API_KEY` only if the endpoint requires authentication.
 
 Three behaviors that used to be opt-in flags are now permanently on, because live testing showed
 each one measurably helps and none regress the offline suite (see TESTING.md for the runs):
@@ -52,15 +54,15 @@ each one measurably helps and none regress the offline suite (see TESTING.md for
 
 Everything else that was previously a matrix of experimental flags (prompt profiles, read-format
 variants, dedup-reads, search, task-reminder, sampling profiles, preserve-tool-reasoning, per-edit
-auto-testing, Gemma markup recovery, seed, temperature, max-turns, max-history-bytes, tool-timeout)
+auto-testing, leaked-markup recovery, seed, temperature, max-turns, max-history-bytes, tool-timeout)
 has been removed from the CLI — most were single-session diagnostics never adjusted in practice; a
 few (temperature, max-turns) turned out to never need changing once the completion-retry loop was in
 place, so a fixed sane default replaced the flag. The remaining CLI surface is: `--root`, `--endpoint`,
 `--prompt`/`--prompt-file`/`--task-file`, `--instructions`, `--output`, `--test-command`, `--timeout`,
 `--model`, `--max-tokens`, `--tui`.
 
-After a timeout with confirmed edits, use `GEMMA_REPLAY_TRACE=/path/to/trace.jsonl` plus `GEMMA_PILOT`
-and `GEMMA_REPO_STAGE` with `go test -run '^TestReplayRealRepoOracle$' -v -count=1`. This replays only
+After a timeout with confirmed edits, use `ANVIL_REPLAY_TRACE=/path/to/trace.jsonl` plus `ANVIL_PILOT`
+and `ANVIL_REPO_STAGE` with `go test -run '^TestReplayRealRepoOracle$' -v -count=1`. This replays only
 successful source edits whose before/after content and hashes match, then grades pristine tests in a
 fresh fixture. Postmortem reports persist beside the trace; a postmortem pass is not an in-budget run.
 
@@ -85,9 +87,10 @@ repository tests or configuration. A non-zero exit triggers the completion-verif
 is marked `verification_failed`. For measured real-repo results, grade separately using pristine
 oracle tests; preserve guided and independent results as different conditions.
 
-Qwen3-30B-A3B emits well-formed native tool calls, so the Gemma leaked-markup recovery path
+Qwen3.6-35B-A3B emits well-formed native tool calls, so the leaked-markup recovery path
 (`<|tool_call>call:name{...}<tool_call|>` and the missing-`call:` variant) exists but is normally
-unused; it stays available in `recovery.go` for anyone still driving Gemma through this harness.
+unused; it stays available in `recovery.go` for any model that leaks this specific format instead of
+a real `tool_calls` response.
 Token-limit responses execute no tools. Three identical consecutive tool calls stop as `stalled`,
 with a corrective warning after the second identical call. A model emitting more than one tool call
 in a single turn has only the first executed; the rest are dropped and traced as
@@ -107,14 +110,14 @@ kit instructions with `--instructions /path/to/AGENTS.md` if required for a comp
 Example for an already-prepared, disposable date-fns worktree:
 
 ```sh
-/tmp/gemma-agent --root /path/to/date-fns-worktree \
+/tmp/anvil-agent --root /path/to/date-fns-worktree \
   --task-file /path/to/date-fns-0d1a2239.json \
   --test-command '["npx","--no-install","vitest","run","src/isWithinInterval/test.ts"]' \
   --output ./runs
 ```
 
 Each attempt creates a unique directory containing `trace.jsonl` and `summary.json`. By default the
-artifact parent is the worktree's sibling `.<worktree-name>-gemma-runs`; `--output` overrides it but
+artifact parent is the worktree's sibling `.<worktree-name>-anvil-runs`; `--output` overrides it but
 must remain outside the worktree. Traces and directories are private to the current user. Traces
 contain prompts, raw responses, server usage/timings when returned, tool results, and edit backups;
 do not share them without reviewing their repository contents. API authorization headers are not logged.
@@ -130,7 +133,7 @@ setup error, 124 total deadline, 130 cancellation. No files are rolled back auto
 ## Terminal UI (first version)
 
 ```sh
-/tmp/gemma-agent --root "$gemma_work" --endpoint http://127.0.0.1:8114/v1 \
+/tmp/anvil-agent --root "$work" --endpoint http://127.0.0.1:8114/v1 \
   --prompt 'Fix sum.mjs so it adds its arguments. Run the tests, then finish.' \
   --test-command '["node","test.mjs"]' --tui --timeout 120s
 ```
@@ -156,13 +159,13 @@ at a real terminal before you rely on those specifically.
 go vet ./...
 go test -race -coverprofile=coverage.out ./...
 go tool cover -func=coverage.out
-go test -run '^$' -fuzz '^FuzzGemmaRecovery$' -fuzztime=15s -parallel=2
+go test -run '^$' -fuzz '^FuzzLeakedMarkupRecovery$' -fuzztime=15s -parallel=2
 ```
 
 All default tests are offline and use fake local HTTP endpoints. They cover:
 
 - Real CLI read → edit → test → final verification, with linked tool results and replayable traces.
-- Observed EXP-077/081 Gemma failures, both opener formats, repeated/cross-channel spans, native precedence,
+- Observed EXP-077/081 leaked-markup failures, both opener formats, repeated/cross-channel spans, native precedence,
   every byte truncation of a tool call, nested values, invalid separators, and fuzz-generated input.
 - Malformed JSON, unknown tools/arguments, token truncation, empty responses, context/turn limits,
   repeated calls, one-correction limits, HTTP failures, cancellation, and verification failures.
@@ -172,14 +175,14 @@ All default tests are offline and use fake local HTTP endpoints. They cover:
 
 CI runs race detection, tests, vet, a bounded fuzz campaign, and a build on macOS and Linux.
 Fuzz seeds always run in the ordinary suite. Regression fixtures document their provenance in
-`testdata/gemma4-regressions.json`.
+`testdata/leaked-markup-regressions.json`.
 
-## Opt-in live Gemma smoke tests
+## Opt-in live model smoke tests
 
 Once the local server is running with sufficient memory:
 
 ```sh
-GEMMA_LIVE=1 go test -run '^TestLiveGemma4$' -v -count=1 -timeout=5m
+ANVIL_LIVE=1 go test -run '^TestLiveModel$' -v -count=1 -timeout=5m
 ```
 
 Runs **read-and-finish**, then **edit-and-test**, sequentially, each with a 120-second total deadline.
@@ -187,28 +190,28 @@ The second stage requires Node. It stops on the first failure. On macOS it monit
 second and cancels if they increase; it never stops a server it does not own. This monitoring cannot
 replace checking memory before starting the server. On Linux pageout monitoring is unavailable here.
 Traces persist in `live-results/` even though fixture directories are temporary. Optional variables:
-`GEMMA_LIVE_ENDPOINT` (loopback only), `GEMMA_LIVE_MODEL`, and `GEMMA_LIVE_OUTPUT`.
-`GEMMA_ALLOW_PAGING=1` explicitly disables the paging abort while retaining measurements. Use only
+`ANVIL_LIVE_ENDPOINT` (loopback only), `ANVIL_LIVE_MODEL`, and `ANVIL_LIVE_OUTPUT`.
+`ANVIL_ALLOW_PAGING=1` explicitly disables the paging abort while retaining measurements. Use only
 when accepting possible system slowdown; results with paging are not clean performance measurements.
 
 These smoke tests are not a real-repo benchmark. After they pass, use the prepared guided date-fns
 and dayjs tasks, then independent prompts, one run at a time. Pin the same server configuration,
-sampling settings, instructions, test command, and deadline when comparing against Pi.
+sampling settings, instructions, test command, and deadline across any comparison.
 
 ## Progressive real-repo checks (Go only)
 
-Use the existing EXP-085 prepared pilot directory as `GEMMA_PILOT`. Before loading the model, verify
+Use the existing EXP-085 prepared pilot directory as `ANVIL_PILOT`. Before loading the model, verify
 that both original bugs still reproduce through the Go runner:
 
 ```sh
-GEMMA_PILOT=/path/to/prepared/pilot go test -run '^TestPreparedRealRepoBaselines$' -v -count=1
+ANVIL_PILOT=/path/to/prepared/pilot go test -run '^TestPreparedRealRepoBaselines$' -v -count=1
 ```
 
 Then, with a healthy server and enough RAM, run the two smoke stages followed by **one** real issue:
 
 ```sh
-GEMMA_LIVE=1 GEMMA_PILOT=/path/to/prepared/pilot GEMMA_REPO_STAGE=date-fns-guided \
-  go test -run '^TestLiveGemma4$' -v -count=1 -timeout=8m
+ANVIL_LIVE=1 ANVIL_PILOT=/path/to/prepared/pilot ANVIL_REPO_STAGE=date-fns-guided \
+  go test -run '^TestLiveModel$' -v -count=1 -timeout=8m
 ```
 
 Advance manually to `dayjs-guided`, then `date-fns-independent` and `dayjs-independent`, only after

@@ -31,7 +31,7 @@ func TestTraceSinkReceivesEveryEvent(t *testing.T) {
 }
 
 func TestTUIModelUpdateFromTraceEvents(t *testing.T) {
-	m := newTUIModel("task", "gemma4", "/repo", nil)
+	m := newTUIModel("task", "test-model", "/repo", nil)
 
 	m2, _ := m.Update(traceEvent{kind: "request", at: time.Now()})
 	m = m2.(tuiModel)
@@ -66,7 +66,7 @@ func TestTUIModelUpdateFromTraceEvents(t *testing.T) {
 }
 
 func TestTUITranscriptBounded(t *testing.T) {
-	m := newTUIModel("task", "gemma4", "/repo", nil)
+	m := newTUIModel("task", "test-model", "/repo", nil)
 	m.maxLines = 5
 	for i := 0; i < 20; i++ {
 		m.append("line")

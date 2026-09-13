@@ -18,7 +18,7 @@ type regression struct {
 
 func regressions(t testing.TB) []regression {
 	t.Helper()
-	data, err := os.ReadFile("testdata/gemma4-regressions.json")
+	data, err := os.ReadFile("testdata/leaked-markup-regressions.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +29,7 @@ func regressions(t testing.TB) []regression {
 	return fixtures
 }
 
-func TestObservedGemma4ParserRegressions(t *testing.T) {
+func TestObservedLeakedMarkupParserRegressions(t *testing.T) {
 	for _, fixture := range regressions(t) {
 		t.Run(fixture.Name, func(t *testing.T) {
 			content := fixture.Content
@@ -74,8 +74,8 @@ func TestRecoveryDepthAndSyntaxLimits(t *testing.T) {
 	}
 }
 
-// Run seed cases in ordinary CI; -fuzz=FuzzGemmaRecovery extends the corpus without loading a model.
-func FuzzGemmaRecovery(f *testing.F) {
+// Run seed cases in ordinary CI; -fuzz=FuzzLeakedMarkupRecovery extends the corpus without loading a model.
+func FuzzLeakedMarkupRecovery(f *testing.F) {
 	for _, fixture := range regressions(f) {
 		f.Add(fixture.Content + fixture.Reasoning)
 	}

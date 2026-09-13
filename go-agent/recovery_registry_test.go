@@ -29,10 +29,10 @@ func TestRecoverAnyXMLAttrSucceeds(t *testing.T) {
 	}
 }
 
-func TestRecoverAnyGemmaAndXMLAttrAgree(t *testing.T) {
-	gemma := `<|tool_call>call:read{path:<|"|>a<|"|>}<tool_call|>`
+func TestRecoverAnyLeakedMarkupAndXMLAttrAgree(t *testing.T) {
+	leakedMarkup := `<|tool_call>call:read{path:<|"|>a<|"|>}<tool_call|>`
 	xmlAttr := `<function name="read" arguments='{"path":"a"}'/>`
-	call, _, err := recoverAny(map[string]bool{"read": true}, gemma, xmlAttr)
+	call, _, err := recoverAny(map[string]bool{"read": true}, leakedMarkup, xmlAttr)
 	if err != nil {
 		t.Fatalf("unexpected error when both formats agree: %v", err)
 	}
@@ -41,23 +41,23 @@ func TestRecoverAnyGemmaAndXMLAttrAgree(t *testing.T) {
 	}
 }
 
-func TestRecoverAnyGemmaAndXMLAttrDisagree(t *testing.T) {
-	gemma := `<|tool_call>call:read{path:<|"|>a<|"|>}<tool_call|>`
+func TestRecoverAnyLeakedMarkupAndXMLAttrDisagree(t *testing.T) {
+	leakedMarkup := `<|tool_call>call:read{path:<|"|>a<|"|>}<tool_call|>`
 	xmlAttr := `<function name="read" arguments='{"path":"b"}'/>`
-	call, name, err := recoverAny(map[string]bool{"read": true}, gemma, xmlAttr)
+	call, name, err := recoverAny(map[string]bool{"read": true}, leakedMarkup, xmlAttr)
 	if err == nil {
 		t.Fatalf("expected ambiguity error, got call=%v name=%q", call, name)
 	}
 }
 
-func TestRecoverAnyGemmaFallsThroughOnXMLAttrRefusal(t *testing.T) {
+func TestRecoverAnyLeakedMarkupFallsThroughOnXMLAttrRefusal(t *testing.T) {
 	// The xml_attr detector fires (a <function ...> tag is present), but the tag is
 	// embedded in narration so xmlAttrParse refuses it. Since a firing detector whose
 	// parser errors must propagate that error immediately (never silently skip to try
-	// another format), this is a hard failure, not a Gemma-only recovery.
-	gemma := `<|tool_call>call:read{path:<|"|>a<|"|>}<tool_call|>`
+	// another format), this is a hard failure, not a leaked-markup-only recovery.
+	leakedMarkup := `<|tool_call>call:read{path:<|"|>a<|"|>}<tool_call|>`
 	embedded := "I'll do this now: <function name=\"read\" arguments='{\"path\":\"a\"}'/>"
-	_, _, err := recoverAny(map[string]bool{"read": true}, gemma, embedded)
+	_, _, err := recoverAny(map[string]bool{"read": true}, leakedMarkup, embedded)
 	if err == nil {
 		t.Fatal("expected error: a firing-but-refusing parser must not be silently bypassed")
 	}
