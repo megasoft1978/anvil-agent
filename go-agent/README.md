@@ -72,11 +72,15 @@ fresh fixture. Postmortem reports persist beside the trace; a postmortem pass is
 |---|---|---|
 | `read` | `path`, optional 1-based `offset` | Reads a file or lists a directory; up to 200 lines/entries and 32 KiB per response. Use `next_offset` to continue. |
 | `edit` | `path`, `oldText`, `newText` | Replaces exactly one non-empty match in an existing file. Saves before/after evidence before writing. |
+| `write` | `path`, `content` | Creates a NEW file (parent directories created as needed). Refuses if the path already exists — `edit` is required to modify an existing file. Enabled by default; disable with `--write=false`. |
+| `search` | `text`, optional `path` | Literal-text grep across the worktree (or one file/directory), skipping `.git`/`node_modules`/build output and binary files. Enabled by default. |
 | `run_tests` | `{}` | Runs the caller's fixed JSON argument list, without shell parsing. Available only with `--test-command`. |
 
 File tools use `os.Root` to reject paths and symlinks outside the selected worktree. They accept UTF-8
-regular files up to 1 MiB. They cannot create files or run arbitrary shell commands. The configured
-test command executes repository code with your user permissions: **this is not a security sandbox**.
+regular files up to 1 MiB. There is deliberately no tool for arbitrary shell commands, and `write` is
+create-only (it cannot overwrite — that's what `edit` is for): this harness is scoped to controlled
+coding experiments, not an open-ended shell. The configured test command executes repository code with
+your user permissions: **this is not a security sandbox**.
 Use disposable worktrees and trusted test commands. Test stdout/stderr is capped at 32 KiB; process
 groups are killed at the command deadline so a watch process or child cannot keep the run alive.
 

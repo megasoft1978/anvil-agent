@@ -110,7 +110,7 @@ func (c *Client) Complete(ctx context.Context, input Request) (Response, error) 
 	return result, nil
 }
 
-func toolDefinitions(withTests, withSearch bool) []ToolDefinition {
+func toolDefinitions(withTests, withSearch, withWrite bool) []ToolDefinition {
 	makeTool := func(name, description string, fields map[string]any, required ...string) ToolDefinition {
 		if required == nil {
 			required = []string{}
@@ -123,10 +123,14 @@ func toolDefinitions(withTests, withSearch bool) []ToolDefinition {
 		return tool
 	}
 	str := func(description string) any { return map[string]any{"type": "string", "description": description} }
+	editDescription := "Replace exactly one occurrence of oldText in an existing UTF-8 file. Read it first. Ambiguous matches are rejected."
+	if withWrite {
+		editDescription += " To create a new file instead, use write."
+	}
 	tools := []ToolDefinition{
 		makeTool("read", "Read a UTF-8 file or list a directory inside the worktree. Use . to list the root. File output is paginated.",
 			map[string]any{"path": str("Relative file or directory path"), "offset": map[string]any{"type": "integer", "minimum": 1, "description": "First line or directory entry, default 1"}}, "path"),
-		makeTool("edit", "Replace exactly one occurrence of oldText in an existing UTF-8 file. Read it first. Ambiguous matches are rejected.",
+		makeTool("edit", editDescription,
 			map[string]any{"path": str("Relative file path"), "oldText": str("Exact non-empty text occurring once"), "newText": str("Replacement text")}, "path", "oldText", "newText"),
 	}
 	if withTests {
@@ -134,6 +138,10 @@ func toolDefinitions(withTests, withSearch bool) []ToolDefinition {
 	}
 	if withSearch {
 		tools = append(tools, makeTool("search", "Find literal text across the repository (or under one file/directory, if path is given). Skips .git, node_modules, and other generated/build directories, and binary files. Returns bounded matching line numbers with nearby source. Use to locate a function or symbol before guessing filenames or rereading whole files. Not a regex search.", map[string]any{"path": str("Relative file or directory path; omit or use . to search the whole worktree"), "text": str("Non-empty literal text to find, such as clone(")}, "text"))
+	}
+	if withWrite {
+		tools = append(tools, makeTool("write", "Create a NEW file with the given content. Fails if the file already exists -- use edit for existing files. Parent directories are created.",
+			map[string]any{"path": str("Relative file path; must not already exist"), "content": str("Complete file content")}, "path", "content"))
 	}
 	return tools
 }

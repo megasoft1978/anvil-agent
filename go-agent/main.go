@@ -65,6 +65,7 @@ func cli(parent context.Context, argv []string, stdout, stderr io.Writer) int {
 	}
 	toolTimeout := 30 * time.Second
 	tui := flags.Bool("tui", false, "launch the interactive terminal UI instead of one-shot JSON output; silently falls back to headless when stdout is not a terminal")
+	write := flags.Bool("write", true, "allow creating new files with the write tool (create-only; edit still required to modify an existing file)")
 	serverPID := flags.Int("server-pid", 0, "PID of the running llama-server; when set, samples its peak RSS and system-wide peak-wired/min-free memory for the duration of this run (macOS only, 0 disables)")
 	flags.StringVar(&config.Model, "model", "qwen36-35b-a3b", "server model ID; also selects its sampling/prompt profile from profiles.go")
 	flags.IntVar(&config.MaxTokens, "max-tokens", 8192, "maximum completion tokens per request")
@@ -191,7 +192,7 @@ func cli(parent context.Context, argv []string, stdout, stderr io.Writer) int {
 	client := &Client{URL: *endpoint, APIKey: os.Getenv("ANVIL_API_KEY"), HTTP: &http.Client{
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 	}}
-	tools := &Tools{Root: root, TestCommand: command, ToolTimeout: toolTimeout, Trace: trace, Edited: map[string]bool{}, RichEditFeedback: config.RichEditFeedback, SearchEnabled: true}
+	tools := &Tools{Root: root, TestCommand: command, ToolTimeout: toolTimeout, Trace: trace, Edited: map[string]bool{}, RichEditFeedback: config.RichEditFeedback, SearchEnabled: true, WriteEnabled: *write}
 	sampler := startMemorySampler(*serverPID, 2*time.Second)
 	var result Summary
 	if *tui && isTerminal(stdout) {

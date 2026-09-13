@@ -27,6 +27,7 @@ type Tools struct {
 	Trace            *Trace
 	Edited           map[string]bool
 	SearchEnabled    bool
+	WriteEnabled     bool
 	ReadDisabled     bool
 	RichEditFeedback bool
 }
@@ -92,6 +93,27 @@ func decodeArguments(raw string, target any) error {
 	}
 	if decoder.Decode(new(any)) != io.EOF {
 		return fmt.Errorf("unexpected trailing arguments")
+	}
+	return nil
+}
+
+// mkdirAllInRoot creates dir and every missing ancestor under root, in order, tolerating
+// components that already exist -- os.Root has no MkdirAll, only single-level Mkdir.
+func mkdirAllInRoot(root *os.Root, dir string) error {
+	parts := strings.Split(filepath.ToSlash(dir), "/")
+	built := ""
+	for _, part := range parts {
+		if part == "" || part == "." {
+			continue
+		}
+		if built == "" {
+			built = part
+		} else {
+			built = built + "/" + part
+		}
+		if err := root.Mkdir(built, 0700); err != nil && !os.IsExist(err) {
+			return err
+		}
 	}
 	return nil
 }
@@ -303,6 +325,54 @@ func (t *Tools) Execute(ctx context.Context, call ToolCall) (any, error) {
 			return nil, fmt.Errorf("no test command configured")
 		}
 		return runCommand(ctx, t.Root.Name(), t.TestCommand, t.ToolTimeout)
+	case "write":
+		if !t.WriteEnabled {
+			return nil, fmt.Errorf("unknown tool %q", call.Function.Name)
+		}
+		var args struct {
+			Path    string `json:"path"`
+			Content string `json:"content"`
+		}
+		if err := decodeArguments(call.Function.Arguments, &args); err != nil {
+			return nil, err
+		}
+		if err := checkedPath(args.Path); err != nil {
+			return nil, err
+		}
+		if args.Path == "" {
+			return nil, fmt.Errorf("path must be non-empty")
+		}
+		if len(args.Content) > maxFileBytes || !utf8.ValidString(args.Content) || strings.ContainsRune(args.Content, 0) {
+			return nil, fmt.Errorf("content must be UTF-8 text within the file limit")
+		}
+		if dir := filepath.Dir(args.Path); dir != "." {
+			if err := mkdirAllInRoot(t.Root, dir); err != nil {
+				return nil, err
+			}
+		}
+		file, err := t.Root.OpenFile(args.Path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if err != nil {
+			if os.IsExist(err) {
+				return nil, fmt.Errorf("file already exists; use edit to modify it")
+			}
+			return nil, err
+		}
+		defer file.Close()
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if _, err := file.WriteString(args.Content); err != nil {
+			return nil, err
+		}
+		if err := file.Sync(); err != nil {
+			return nil, err
+		}
+		t.Edited[args.Path] = true
+		if err := t.Trace.Event("write", map[string]any{"path": args.Path, "content": args.Content}); err != nil {
+			return nil, err
+		}
+		return map[string]any{"path": args.Path, "created": true, "bytes": len(args.Content),
+			"content_sha256": fmt.Sprintf("%x", sha256.Sum256([]byte(args.Content)))}, nil
 	default:
 		return nil, fmt.Errorf("unknown tool %q", call.Function.Name)
 	}

@@ -261,7 +261,7 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 				closeOutReserve = remaining < reserve
 			}
 		}
-		request := Request{Model: config.Model, Messages: messages, Tools: toolDefinitions(len(tools.TestCommand) > 0, tools.SearchEnabled), ToolChoice: "auto", MaxTokens: config.MaxTokens, Temperature: config.Temperature, TopP: config.TopP, TopK: config.TopK, PresencePenalty: config.PresencePenalty, RepeatPenalty: config.RepeatPenalty, Seed: config.Seed, CachePrompt: true}
+		request := Request{Model: config.Model, Messages: messages, Tools: toolDefinitions(len(tools.TestCommand) > 0, tools.SearchEnabled, tools.WriteEnabled), ToolChoice: "auto", MaxTokens: config.MaxTokens, Temperature: config.Temperature, TopP: config.TopP, TopK: config.TopK, PresencePenalty: config.PresencePenalty, RepeatPenalty: config.RepeatPenalty, Seed: config.Seed, CachePrompt: true}
 		if readsSinceEdit >= forceEditAfterReads {
 			// Force-edit window: enough reads have happened with no edit that further reading is
 			// unlikely to be the missing ingredient (see forceEditAfterReads above). Remove read
