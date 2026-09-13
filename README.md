@@ -24,20 +24,22 @@ defaults, and its server flags are one swappable configuration, not baked into t
 Bugs fixed across 9 realistic multi-file projects (React + Express + TypeScript), reported the way you'd
 actually describe them to a coding agent: by symptom, never by cause.
 
+Model under test: **Qwen3.6-35B-A3B-UD-IQ2_M** (this repo's shipped local config — see `go-agent/profiles.go`).
+
 | | Score |
 |---|---|
 | Bugs fixed | **32/44 (73%)** |
 | Generation speed | **22.5 tok/s** (8,959 tokens generated, 481.1s wall across all 9 scenarios) |
 | Mean speculative-decoding acceptance | 55% |
 
-Measured 2026-09-13 against the shipped config (Qwen3.6-35B-A3B-UD-IQ2_M) on an Apple M1 Mac mini, 16GB —
+Measured 2026-09-13 against the shipped config on an Apple M1 Mac mini, 16GB —
 `setup.sh --benchmark` reproduces this on your own hardware (needs a full clone; the scenario data doesn't
 fit in a single script). Runs in about 12GB total: ~10.7GB of model weights on disk, plus working memory
 while the server runs.
 
-| Chip | tokens/sec |
+| Chip | tokens/sec (Qwen3.6-35B-A3B-UD-IQ2_M, shipped config) |
 |---|---|
-| M1 | **22.5 — measured** (mean across the full suite, shipped config) |
+| M1 | **22.5 — measured** (mean across the full suite) |
 | M2 / M3 | ~33.1 — estimated |
 | M2 Pro | ~66.2 — estimated |
 | M3 Pro | ~49.6 — estimated |
@@ -50,6 +52,41 @@ Non-M1 numbers are estimated by scaling the M1 measurement by each chip's publis
 against M1's ~68GB/s — this harness is memory-bandwidth-bound (a MoE model reads a different slice of
 weights per token, not compute-bound math), so tokens/sec tracks bandwidth roughly linearly. Not measured —
 run `--report-speed` to contribute a real one.
+
+### Compared to Sonnet 5 / Opus 5
+
+Same 9 scenarios, same bug reports, graded with the same `benchmarks/grade.mjs` oracle — but run as an
+agentic Claude Code task (Read/Edit tools, real files on disk) instead of one raw completion against a
+local server, so treat this as "what a coding agent driven by each model scores here," not a clean apples-
+to-apples inference benchmark.
+
+| Model | Bugs fixed | Notes |
+|---|---|---|
+| **Qwen3.6-35B-A3B-UD-IQ2_M** (local, this repo's shipped config) | 32/44 (73%) | single-shot completion, no tools — see table above |
+| **claude-sonnet-5** (agentic, Claude Code, 2026-09-13) | 41/44 (93%) | avg ~77s wall-clock / ~61k tokens per scenario |
+| **claude-opus-5** (agentic, Claude Code, 2026-09-13) | 43/44 (98%) | avg ~34s wall-clock / ~50k tokens per scenario |
+
+Sonnet's 3 misses: `cart-checkout`'s discount-before-tax ordering, and 2 of `realtime-sync`'s 6 bugs (the
+sender seeing its own broadcast edit, and the `opId`-collision case). Opus's 1 miss: that same
+`opId`-collision case — the one bug neither model fixed. Sonnet's per-scenario time/tokens include full
+agentic tool use (reads, edits, re-reads) and aren't directly comparable to the local model's raw decode
+tok/s above — different measurement, not a faster/slower claim.
+
+**Code-quality verdict, judged by Opus 5 itself** (given both models' diffs for 3 of the 9 scenarios,
+told explicitly which set was its own output, asked to be self-critical rather than favor itself):
+Opus 5's fixes were judged clearly better on two decisive points — `cart-checkout`'s stock-reservation
+route only partially fixed a partial-reservation leak that Sonnet's fix left in place, and `realtime-sync`'s
+socket `send()` call that Sonnet left able to throw mid-reconnect. Sonnet's code also renamed a `drain()`
+function to no longer actually drain anything, a naming/behavior mismatch Opus avoided. Opus's fixes did
+carry some real scope creep (exponential backoff, a monotonic clock helper) beyond what was asked.
+
+**Is the 73% score just the 2-bit quantization?** Partly, but this isn't a clean isolation — Qwen3.6-35B-A3B
+run here is both a much smaller model (3B active params per token, MoE) *and* quantized to ~2.5 bits/weight
+(IQ2_M) *and* running single-shot with no tools, all at once, versus Sonnet/Opus running full agentic loops.
+2-bit-class quantization is well-documented to cause real, measurable quality loss on its own — so it's a
+plausible contributor to the gap — but nothing here isolates quantization from model scale or from the
+tool-less single-shot setup. An unquantized Qwen3.6-35B-A3B run (not available locally) would be needed to
+actually separate those effects.
 
 <details>
 <summary><strong>Advanced options</strong></summary>
