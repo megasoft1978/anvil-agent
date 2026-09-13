@@ -46,12 +46,11 @@ func cli(parent context.Context, argv []string, stdout, stderr io.Writer) int {
 	taskFile := flags.String("task-file", "", "research task JSON; sends only its report field to the model")
 	instructions := flags.String("instructions", "", "optional explicit instructions file; no ambient AGENTS.md discovery")
 	output := flags.String("output", "", "artifact parent directory outside the worktree; default: sibling .<worktree>-anvil-runs")
-	testCommand := flags.String("test-command", "", `fixed test argv as JSON, e.g. '["node","test.mjs"]'; no shell parsing`)
-	timeout := flags.Duration("timeout", 120*time.Second, "total deadline, including requests, tools, and final verification")
+	timeout := flags.Duration("timeout", 120*time.Second, "total deadline, including requests and tools")
 	// Everything below except sampling and prompt profile (now supplied per --model by
 	// profiles.go) is a fixed default rather than a CLI flag: rich edit feedback, the
-	// ledger's repeat-action refusal, read deduplication, 16 turns, a 30s test-command
-	// deadline, and a 64 KiB history ceiling. Live testing showed each of these
+	// ledger's repeat-action refusal, read deduplication, 16 turns, and a 64 KiB history
+	// ceiling. Live testing showed each of these
 	// measurably helps or was never once adjusted in practice; --timeout, --max-tokens,
 	// and --model are the knobs that actually vary run to run.
 	config := Config{
@@ -63,7 +62,6 @@ func cli(parent context.Context, argv []string, stdout, stderr io.Writer) int {
 		MaxTurns:         16,
 		MaxHistoryBytes:  64 << 10,
 	}
-	toolTimeout := 30 * time.Second
 	tui := flags.Bool("tui", false, "launch the interactive terminal UI instead of one-shot JSON output; silently falls back to headless when stdout is not a terminal")
 	write := flags.Bool("write", true, "allow creating new files with the write tool (create-only; edit still required to modify an existing file)")
 	serverPID := flags.Int("server-pid", 0, "PID of the running llama-server; when set, samples its peak RSS and system-wide peak-wired/min-free memory for the duration of this run (macOS only, 0 disables)")
@@ -134,15 +132,6 @@ func cli(parent context.Context, argv []string, stdout, stderr io.Writer) int {
 			return fail(err)
 		}
 	}
-	var command []string
-	if *testCommand != "" {
-		if err := json.Unmarshal([]byte(*testCommand), &command); err != nil {
-			return fail(err)
-		}
-		if len(command) == 0 || command[0] == "" {
-			return fail(fmt.Errorf("test command must contain an executable"))
-		}
-	}
 	absRoot, err := filepath.Abs(*rootPath)
 	if err != nil {
 		return fail(err)
@@ -184,7 +173,7 @@ func cli(parent context.Context, argv []string, stdout, stderr io.Writer) int {
 	}
 	defer traceFile.Close()
 	trace := &Trace{Writer: traceFile, Progress: stderr}
-	if err := trace.Event("run_start", map[string]any{"schema_version": 1, "config": config, "root": absRoot, "endpoint": *endpoint, "task_id": taskID, "prompt": *prompt, "test_command": command, "timeout": timeout.String(), "tool_timeout": toolTimeout.String(), "go_version": runtime.Version()}); err != nil {
+	if err := trace.Event("run_start", map[string]any{"schema_version": 1, "config": config, "root": absRoot, "endpoint": *endpoint, "task_id": taskID, "prompt": *prompt, "timeout": timeout.String(), "go_version": runtime.Version()}); err != nil {
 		return fail(err)
 	}
 	ctx, cancel := context.WithTimeout(parent, *timeout)
@@ -192,7 +181,7 @@ func cli(parent context.Context, argv []string, stdout, stderr io.Writer) int {
 	client := &Client{URL: *endpoint, APIKey: os.Getenv("ANVIL_API_KEY"), HTTP: &http.Client{
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 	}}
-	tools := &Tools{Root: root, TestCommand: command, ToolTimeout: toolTimeout, Trace: trace, Edited: map[string]bool{}, RichEditFeedback: config.RichEditFeedback, SearchEnabled: true, WriteEnabled: *write}
+	tools := &Tools{Root: root, Trace: trace, Edited: map[string]bool{}, RichEditFeedback: config.RichEditFeedback, SearchEnabled: true, WriteEnabled: *write}
 	sampler := startMemorySampler(*serverPID, 2*time.Second)
 	var result Summary
 	if *tui && isTerminal(stdout) {

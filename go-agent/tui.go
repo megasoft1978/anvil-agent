@@ -92,10 +92,6 @@ func summarize(ev traceEvent) (line string, status string) {
 	case "correction":
 		reason, _ := ev.data.(map[string]any)["reason"].(string)
 		return fmt.Sprintf("[%s] correction sent to model: %s", stamp, reason), ""
-	case "auto_test":
-		fields, _ := ev.data.(map[string]any)
-		result, _ := fields["result"].(CommandResult)
-		return fmt.Sprintf("[%s] auto-verify: exit=%d timed_out=%v", stamp, result.ExitCode, result.TimedOut), ""
 	case "summary":
 		return fmt.Sprintf("[%s] finished", stamp), "done"
 	}

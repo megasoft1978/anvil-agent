@@ -12,7 +12,7 @@ func TestXMLAttrRecovery(t *testing.T) {
 		wantArg string
 	}{
 		{
-			// Verbatim capture from Qwen2.5-Coder-7B-Instruct this session.
+			// Regression capture from a malformed tool-call response.
 			name:    "captured_fenced",
 			input:   "```xml\n<function name=\"read\" arguments='{\"path\": \"test.txt\"}'/>\n```",
 			wantFn:  "read",

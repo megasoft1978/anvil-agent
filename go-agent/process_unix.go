@@ -40,7 +40,7 @@ func (b *limitedOutput) Write(p []byte) (int, error) {
 
 func runCommand(parent context.Context, dir string, argv []string, timeout time.Duration) (CommandResult, error) {
 	if len(argv) == 0 || argv[0] == "" {
-		return CommandResult{}, fmt.Errorf("test command is empty")
+		return CommandResult{}, fmt.Errorf("verification command is empty")
 	}
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()

@@ -73,7 +73,7 @@ func TestWriteCreatesNestedDirs(t *testing.T) {
 
 func TestToolDefinitionsIncludeWriteOnlyWhenEnabled(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
-		defs := toolDefinitions(false, false, enabled)
+		defs := toolDefinitions(false, enabled)
 		found := false
 		for _, d := range defs {
 			if d.Function.Name == "write" {

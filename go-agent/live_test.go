@@ -115,6 +115,7 @@ func TestLiveModel(t *testing.T) {
 			}
 			var task repoTask
 			var snapshot map[string][32]byte
+			var command []string
 			report := filepath.Join(t.TempDir(), "oracle.json")
 			if stage == "read-and-finish" {
 				args = append(args, "--prompt", "Read note.txt using the read tool, then reply with its exact contents. Do not edit any files.")
@@ -122,21 +123,16 @@ func TestLiveModel(t *testing.T) {
 				if err := os.WriteFile(filepath.Join(root, "sum.mjs"), []byte("export const sum = (a,b) => a-b;\n"), 0600); err != nil {
 					t.Fatal(err)
 				}
-				command, _ := json.Marshal([]string{"node", "--input-type=module", "-e", `import assert from 'node:assert/strict'; import {sum} from './sum.mjs'; assert.equal(sum(2,3),5); assert.equal(sum(-2,3),1); assert.equal(sum(0,0),0);`})
-				args = append(args, "--prompt", "sum.mjs returns incorrect sums. Read it, fix the source, use run_tests to verify, then finish.", "--test-command", string(command))
+				command = []string{"node", "--input-type=module", "-e", `import assert from 'node:assert/strict'; import {sum} from './sum.mjs'; assert.equal(sum(2,3),5); assert.equal(sum(-2,3),1); assert.equal(sum(0,0),0);`}
+				args = append(args, "--prompt", "sum.mjs returns incorrect sums. Read it, fix the source, then finish.")
 			} else {
-				var command []string
 				oracleDir, err := os.MkdirTemp(output, stage+"-verification-")
 				if err != nil {
 					t.Fatal(err)
 				}
 				report = filepath.Join(oracleDir, "oracle.json")
 				task, command, snapshot = prepareRepo(t, os.Getenv("ANVIL_PILOT"), stage, root, report)
-				encoded, err := json.Marshal(command)
-				if err != nil {
-					t.Fatal(err)
-				}
-				args = append(args, "--prompt", task.Report, "--test-command", string(encoded))
+				args = append(args, "--prompt", task.Report)
 			}
 			before, err := livePageouts()
 			if err != nil {
@@ -192,8 +188,9 @@ func TestLiveModel(t *testing.T) {
 					t.Fatal("read/finish did not satisfy fixture")
 				}
 			} else {
-				if summary.Verification == nil || summary.Verification.ExitCode != 0 {
-					t.Fatal("no successful final verification")
+				verification, err := runCommand(context.Background(), root, command, 30*time.Second)
+				if err != nil || verification.ExitCode != 0 || verification.TimedOut {
+					t.Fatalf("host verification failed: %+v %v", verification, err)
 				}
 				if stage == "edit-and-test" {
 					if len(summary.EditedFiles) != 1 || summary.EditedFiles[0] != "sum.mjs" {

@@ -38,20 +38,10 @@ func TestStrictArgumentNamesAndDuplicates(t *testing.T) {
 	}
 }
 
-func TestModelCannotChooseTestCommand(t *testing.T) {
+func TestModelCannotRunCommands(t *testing.T) {
 	tools, _ := newTools(t)
-	tools.TestCommand = []string{"/bin/sh", "-c", "touch allowed"}
-	if _, err := tools.Execute(context.Background(), call("run_tests", `{"command":"touch injected"}`)); err == nil {
-		t.Fatal("model-supplied command accepted")
-	}
-	if _, err := os.Stat(filepath.Join(tools.Root.Name(), "allowed")); !os.IsNotExist(err) {
-		t.Fatal("command ran despite invalid arguments")
-	}
-	if _, err := tools.Execute(context.Background(), call("run_tests", `{}`)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(tools.Root.Name(), "allowed")); err != nil {
-		t.Fatal("fixed command did not run")
+	if _, err := tools.Execute(context.Background(), call("bash", `{"command":"touch injected"}`)); err == nil {
+		t.Fatal("model-facing shell command accepted")
 	}
 }
 
@@ -153,30 +143,6 @@ func TestTurnLimitAndNativeOnlyMode(t *testing.T) {
 	result = runAgent(context.Background(), cfg, "task", &Client{URL: server.URL, HTTP: server.Client()}, tools, &Trace{Writer: trace})
 	if result.Status != "malformed_tool_call" || result.ToolCalls != 0 {
 		t.Fatalf("native-only got %+v", result)
-	}
-}
-
-func TestVerificationOutcomes(t *testing.T) {
-	for _, tc := range []struct {
-		name, status string
-		command      []string
-	}{
-		{"passes", "completed", []string{"/bin/sh", "-c", "exit 0"}},
-		{"fails", "verification_failed", []string{"/bin/sh", "-c", "exit 1"}},
-		{"missing", "verification_error", []string{"/nonexistent-test-command"}},
-		{"tool-timeout", "verification_failed", []string{"/bin/sh", "-c", "sleep 10"}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			tools, trace := newTools(t)
-			tools.TestCommand = tc.command
-			tools.ToolTimeout = 50 * time.Millisecond
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { reply(w, Message{Content: "Done"}, "stop") }))
-			defer server.Close()
-			result := runAgent(context.Background(), config(), "task", &Client{URL: server.URL, HTTP: server.Client()}, tools, &Trace{Writer: trace})
-			if result.Status != tc.status {
-				t.Fatalf("got %+v", result)
-			}
-		})
 	}
 }
 

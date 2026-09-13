@@ -13,7 +13,6 @@ import (
 	"sort"
 	"strings"
 	"syscall"
-	"time"
 	"unicode/utf8"
 )
 
@@ -22,8 +21,6 @@ const maxOutputBytes = 32 << 10
 
 type Tools struct {
 	Root             *os.Root
-	TestCommand      []string
-	ToolTimeout      time.Duration
 	Trace            *Trace
 	Edited           map[string]bool
 	SearchEnabled    bool
@@ -317,14 +314,6 @@ func (t *Tools) Execute(ctx context.Context, call ToolCall) (any, error) {
 			result["current_context"] = lineWindow(after, strings.Index(after, *args.NewText), editContextLines)
 		}
 		return result, nil
-	case "run_tests":
-		if err := decodeArguments(call.Function.Arguments, &struct{}{}); err != nil {
-			return nil, err
-		}
-		if len(t.TestCommand) == 0 {
-			return nil, fmt.Errorf("no test command configured")
-		}
-		return runCommand(ctx, t.Root.Name(), t.TestCommand, t.ToolTimeout)
 	case "write":
 		if !t.WriteEnabled {
 			return nil, fmt.Errorf("unknown tool %q", call.Function.Name)

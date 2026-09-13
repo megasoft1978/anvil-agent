@@ -166,11 +166,12 @@ func prepareRepo(t *testing.T, pilot, stage, root, report string) (repoTask, []s
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Source hints vary by stage. Shell invocation hints are replaced with our actual tool contract.
+	// Source hints vary by stage. Shell invocation hints are removed from model context; the host
+	// test runner executes the trusted verification command after the model finishes.
 	if index := strings.Index(task.Report, "Test command:"); index >= 0 {
 		task.Report = task.Report[:index]
 	}
-	task.Report += "\nFix the source, call run_tests to verify, then finish. Do not change tests, configuration, or dependencies."
+	task.Report += "\nFix the source, then finish. Do not change tests, configuration, or dependencies."
 	if os.Getenv("ANVIL_PRELOAD_SOURCES") == "1" {
 		var paths []string
 		for path := range before {

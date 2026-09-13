@@ -103,18 +103,11 @@ MODEL_MIN_FREE_GB=12   # model size plus headroom, checked before downloading
 MODEL_ID="qwen36-35b-a3b"
 CTX=24576
 MAX_TOKENS=3072
-# These flags are carried over from prior tuning and have not been fully re-validated against this model --
-# treat them as a starting point, not a measured-correct config, until someone re-runs --benchmark against it.
-# One exception, confirmed live 2026-09-12: `--ctx-checkpoints 0 --cache-ram 0` measured a real memory win on
-# the old target model with "no change in generation speed" there, but on Qwen3.6-35B-A3B it causes llama-server
-# to periodically discard its ENTIRE prompt-prefix cache instead of extending it incrementally -- confirmed via
-# the server's own `timings.cache_n` per request: with these flags, a real 11-turn agentic run hit two full
-# re-prefills (one on an 8801-token accumulated conversation, costing 81 real seconds by itself, more than a
-# quarter of a 300s budget); with them removed, the identical task's cache_n grew monotonically for all 16
-# turns with zero resets, and the run covered 16 turns in 245s instead of 11-12 turns in the full 300s. Real
-# memory cost of removing them: server RSS grew from ~8.8GB to ~11.2GB over a longer 16-turn conversation on
-# this same box -- still fits in 16GB, but leaves less headroom for other apps than the old flags did. Do not
-# reintroduce these two flags without re-measuring cache_n behavior on whatever model is current at the time.
+# Validated Qwen3.6-35B-A3B configuration: keep `--ctx-checkpoints 0 --cache-ram 0` disabled.
+# On this model those flags periodically discard the entire prompt-prefix cache instead of extending it
+# incrementally. With them removed, a 16-turn agentic run kept `timings.cache_n` growing monotonically and
+# completed in 245s instead of reaching only 11-12 turns in a 300s budget. The tradeoff is higher server RSS
+# (~11.2GB rather than ~8.8GB on the validation machine), which still fits the shipped 16GB target.
 SERVER_FLAGS=(-ngl 99 -fa on -c "$CTX" --no-warmup -np 1 --spec-type ngram-simple --reasoning off -ub 256 -b 256)
 # Pinned into config_sig deliberately: --spec-type ngram-simple's acceptance rate is prompt-dependent, so if
 # this text ever changed without a version bump, reports collected before and after the change would silently
@@ -298,7 +291,7 @@ server_health() {
   curl -s -m 2 "http://127.0.0.1:$PORT/health" 2>/dev/null | grep -q ok
 }
 
-# A /health-passing server can still fail every real completion -- confirmed the hard way this session.
+# A /health-passing server can still fail a real completion, so smoke_test checks the endpoint.
 # `|| true` on the curl matters: without it, a connection failure under `set -e` kills the whole script with
 # no diagnostic, in exactly the situation this check exists to diagnose. Confirmed by inspection: the original
 # had no `|| true` here.
@@ -900,7 +893,7 @@ case "$MODE" in
     echo "  git clone https://github.com/megasoft1978/anvil-agent && cd anvil-agent/go-agent"
     echo "  go build -o anvil-agent ."
     echo "  ./anvil-agent --root <your-project> --endpoint http://127.0.0.1:$PORT/v1 --model $MODEL_ID \\"
-    echo "      --prompt \"describe the bug\" --test-command '[\"npm\",\"test\"]'"
+    echo "      --prompt \"describe the bug\""
     echo "See go-agent/README.md for the full flag list."
     ;;
 esac

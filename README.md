@@ -3,7 +3,7 @@
 # anvil-agent
 
 **A local coding model, sized to fit your Mac, driven by this repo's own Go harness. One command to get a
-server running; go-agent does the actual read/edit/test work.**
+server running; go-agent does the actual read/edit work.**
 
 ```
 curl -fsSL https://raw.githubusercontent.com/megasoft1978/anvil-agent/main/setup.sh | bash
@@ -12,18 +12,18 @@ curl -fsSL https://raw.githubusercontent.com/megasoft1978/anvil-agent/main/setup
 Checks your hardware, downloads the current target model (once), and starts a `llama-server` tuned for it.
 No cloud API, no account, nothing leaves your machine once the model's on disk.
 
-The [Go agent harness](go-agent/README.md) is what actually reads, edits, and tests against that server —
-a small read/edit/test loop with configurable deadlines and JSONL traces. See its
+The [Go agent harness](go-agent/README.md) is what actually reads and edits against that server —
+a small read/edit loop with configurable deadlines and JSONL traces. See its
 [offline verification results](go-agent/TESTING.md) for what's been checked so far.
 
-This kit is model-agnostic by design (see `go-agent/profiles.go`): the currently-targeted model, its sampling
-defaults, and its server flags are one swappable configuration, not baked into the project's identity.
+This project is currently tuned for Qwen3.6-35B-A3B (see `go-agent/profiles.go`): its sampling defaults and
+server flags are kept together so the shipped configuration stays reproducible.
 
 ## Benchmarks
 
 Bugs fixed across 9 realistic multi-file projects (React + Express + TypeScript), reported the way you'd
 actually describe them to a coding agent: by symptom, never by cause. Every model below was run
-**agentically** — real Read/Edit tools, no test feedback in the loop, same 9 scenarios, same
+**agentically** — real Read/Edit tools, no command execution in the loop, same 9 scenarios, same
 `benchmarks/grade.mjs` oracle — because that's how this project is actually used; a single raw completion
 with no tools isn't a realistic usage pattern, so that measurement has been dropped rather than kept as a
 misleadingly-high headline number.
@@ -36,7 +36,7 @@ misleadingly-high headline number.
 
 The local model's biggest weakness here isn't understanding the bug — it's finishing: this quant tends to
 re-read files instead of committing to an edit, and burns its 16-turn budget before wrapping up. That
-matches this repo's own prior live-testing history (see `go-agent/TESTING.md` / historical session notes)
+matches the earlier measured runs documented in `go-agent/TESTING.md`
 finding the same "oscillates, never commits" pattern on other tasks. n=1 per scenario here (an agentic run
 costs far more than a single completion) — treat the exact number as directional, not a tight measurement.
 

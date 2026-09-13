@@ -7,7 +7,7 @@ Go 1.24+, macOS or Linux.
 Sampling defaults and prompt profile are selected per `--model` from `profiles.go` (a small registry,
 one entry per model this harness has been tuned against; unknown models fall back to a conservative
 default) rather than hardcoded in `main.go` -- see that file for how to add a model. Tool-call recovery
-is separate and model-agnostic by construction: `recovery_registry.go` selects a parser by the shape of
+selects a parser by the shape of
 a malformed response, not by which model is declared.
 
 The loop sends OpenAI-compatible chat requests with `tool_choice: "auto"` and
@@ -24,16 +24,15 @@ go build -o /tmp/anvil-agent .
 work=$(mktemp -d)
 cp testdata/tiny-edit/sum.mjs testdata/tiny-edit/test.mjs "$work/"
 /tmp/anvil-agent --root "$work" \
-  --prompt 'Fix sum.mjs so it adds its arguments. Run the tests, then finish.' \
-  --test-command '["node","test.mjs"]' --output ./runs
+  --prompt 'Fix sum.mjs so it adds its arguments, then finish.' --output ./runs
 ```
 
 The fixture is intentionally broken. The server must already be healthy at `127.0.0.1:8114`.
 Do not load it until the machine has enough RAM. The harness does not quit applications or change
 server flags. Dependencies for real-repo tasks must be installed before model residency.
 
-Default limits: 120 seconds **total**, including model requests, tools, and final verification;
-30 seconds per test command; 16 model requests; 8,192 output tokens per request; sampling per the
+Default limits: 120 seconds **total**, including model requests and tools;
+16 model requests; 8,192 output tokens per request; sampling per the
 target model's own profile in `profiles.go` (not greedy decoding by default).
 `--help` lists overrides. Supply `ANVIL_API_KEY` only if the endpoint requires authentication.
 
@@ -46,20 +45,17 @@ each one measurably helps and none regress the offline suite (see TESTING.md for
 - **Ledger**: the harness remembers every path confirmed absent and every edit already tried
   (applied-then-reverted, or failed to apply) in the current run, and refuses an exact repeat before
   it executes rather than letting the model burn a turn re-discovering the same dead end.
-- **Completion-verification retry**: when the model finishes with plain text and a test command is
-  configured, the harness always runs it (this is unconditional, not a flag). If it fails, the model
-  gets up to two more turns with the real failure fed back before the run gives up — this happens
-  once per completion attempt, not once per edit, so a multi-file fix costs one test run per attempt
-  instead of one per file touched.
+- **Host-side verification**: the agent loop never executes repository commands. Benchmark and
+  integration tests run trusted verification commands outside the model-facing tool surface.
 
 Everything else that was previously a matrix of experimental flags (prompt profiles, read-format
 variants, dedup-reads, search, task-reminder, sampling profiles, preserve-tool-reasoning, per-edit
-auto-testing, leaked-markup recovery, seed, temperature, max-turns, max-history-bytes, tool-timeout)
+leaked-markup recovery, seed, temperature, max-turns, max-history-bytes, tool-timeout)
 has been removed from the CLI — most were single-session diagnostics never adjusted in practice; a
-few (temperature, max-turns) turned out to never need changing once the completion-retry loop was in
-place, so a fixed sane default replaced the flag. The remaining CLI surface is: `--root`, `--endpoint`,
-`--prompt`/`--prompt-file`/`--task-file`, `--instructions`, `--output`, `--test-command`, `--timeout`,
-`--model`, `--max-tokens`, `--tui`.
+few (temperature, max-turns) turned out to never need changing in normal runs, so a fixed sane
+default replaced the flag. The remaining CLI surface is: `--root`, `--endpoint`,
+`--prompt`/`--prompt-file`/`--task-file`, `--instructions`, `--output`, `--timeout`, `--model`,
+`--max-tokens`, `--tui`.
 
 After a timeout with confirmed edits, use `ANVIL_REPLAY_TRACE=/path/to/trace.jsonl` plus `ANVIL_PILOT`
 and `ANVIL_REPO_STAGE` with `go test -run '^TestReplayRealRepoOracle$' -v -count=1`. This replays only
@@ -74,22 +70,16 @@ fresh fixture. Postmortem reports persist beside the trace; a postmortem pass is
 | `edit` | `path`, `oldText`, `newText` | Replaces exactly one non-empty match in an existing file. Saves before/after evidence before writing. |
 | `write` | `path`, `content` | Creates a NEW file (parent directories created as needed). Refuses if the path already exists — `edit` is required to modify an existing file. Enabled by default; disable with `--write=false`. |
 | `search` | `text`, optional `path` | Literal-text grep across the worktree (or one file/directory), skipping `.git`/`node_modules`/build output and binary files. Enabled by default. |
-| `run_tests` | `{}` | Runs the caller's fixed JSON argument list, without shell parsing. Available only with `--test-command`. |
 
 File tools use `os.Root` to reject paths and symlinks outside the selected worktree. They accept UTF-8
-regular files up to 1 MiB. There is deliberately no tool for arbitrary shell commands, and `write` is
-create-only (it cannot overwrite — that's what `edit` is for): this harness is scoped to controlled
-coding experiments, not an open-ended shell. The configured test command executes repository code with
-your user permissions: **this is not a security sandbox**.
-Use disposable worktrees and trusted test commands. Test stdout/stderr is capped at 32 KiB; process
-groups are killed at the command deadline so a watch process or child cannot keep the run alive.
+regular files up to 1 MiB. There is deliberately no tool for arbitrary shell commands: this harness
+is scoped to controlled coding experiments, not an open-ended shell. Use disposable worktrees and
+run trusted verification commands outside the model loop. Test stdout/stderr is capped at 32 KiB;
+process groups are killed at the command deadline so a watch process or child cannot keep the run alive.
 
-On text completion, the configured test command is run under the remaining deadline; a zero exit
-means that command passed, not that an independent oracle proved the bug fixed — the model can edit
-repository tests or configuration. A non-zero exit triggers the completion-verification retry above
-(capped at two extra attempts, and only when at least one edit has actually been made) before the run
-is marked `verification_failed`. For measured real-repo results, grade separately using pristine
-oracle tests; preserve guided and independent results as different conditions.
+On text completion, `completed` means only that the model supplied a final reply. It does not claim
+that a repository test passed. For measured real-repo results, run the trusted verifier separately
+against pristine oracle tests; preserve guided and independent results as different conditions.
 
 Qwen3.6-35B-A3B emits well-formed native tool calls, so the leaked-markup recovery path
 (`<|tool_call>call:name{...}<tool_call|>` and the missing-`call:` variant) exists but is normally
@@ -116,7 +106,6 @@ Example for an already-prepared, disposable date-fns worktree:
 ```sh
 /tmp/anvil-agent --root /path/to/date-fns-worktree \
   --task-file /path/to/date-fns-0d1a2239.json \
-  --test-command '["npx","--no-install","vitest","run","src/isWithinInterval/test.ts"]' \
   --output ./runs
 ```
 
@@ -127,10 +116,10 @@ contain prompts, raw responses, server usage/timings when returned, tool results
 do not share them without reviewing their repository contents. API authorization headers are not logged.
 Raw responses include malformed output; recovered spans are not repeated in subsequent requests.
 
-Summary statuses distinguish `completed`, `verification_failed`, `verification_error`, `truncated`,
+Summary statuses distinguish `completed`, `truncated`,
 `malformed_tool_call`, `stalled`, `turn_limit`, `context_limit`, `empty_completion`, `protocol_error`,
-`timeout`, `cancelled`, and transport/trace errors. `completed` without a test command means only
-that the model supplied a final reply. CLI exit codes: 0 completed, 1 unsuccessful run, 2 CLI/artifact
+`timeout`, `cancelled`, and transport/trace errors. `completed` means only that the model supplied a
+final reply; verification is external to the agent loop. CLI exit codes: 0 completed, 1 unsuccessful run, 2 CLI/artifact
 setup error, 124 total deadline, 130 cancellation. No files are rolled back automatically; the trace's
 `edit_backup` entries preserve the before and after text for inspection and recovery.
 
@@ -138,8 +127,7 @@ setup error, 124 total deadline, 130 cancellation. No files are rolled back auto
 
 ```sh
 /tmp/anvil-agent --root "$work" --endpoint http://127.0.0.1:8114/v1 \
-  --prompt 'Fix sum.mjs so it adds its arguments. Run the tests, then finish.' \
-  --test-command '["node","test.mjs"]' --tui --timeout 120s
+  --prompt 'Fix sum.mjs so it adds its arguments, then finish.' --tui --timeout 120s
 ```
 
 `--tui` launches a live Bubble Tea view of the same run `runAgent` would otherwise execute
@@ -168,11 +156,12 @@ go test -run '^$' -fuzz '^FuzzLeakedMarkupRecovery$' -fuzztime=15s -parallel=2
 
 All default tests are offline and use fake local HTTP endpoints. They cover:
 
-- Real CLI read → edit → test → final verification, with linked tool results and replayable traces.
+- Real CLI read → edit → final reply, with linked tool results and replayable traces; host-side verification
+  remains covered by the oracle and process-runner tests.
 - Observed EXP-077/081 leaked-markup failures, both opener formats, repeated/cross-channel spans, native precedence,
   every byte truncation of a tool call, nested values, invalid separators, and fuzz-generated input.
 - Malformed JSON, unknown tools/arguments, token truncation, empty responses, context/turn limits,
-  repeated calls, one-correction limits, HTTP failures, cancellation, and verification failures.
+  repeated calls, one-correction limits, HTTP failures, cancellation, and host-side verification outcomes.
 - Traversal/symlink escapes, file and output limits, ambiguous edits, backup failures, binary/special
   files, fixed command dispatch, process-group deadlines and child cleanup.
 - CLI input contracts, isolated prompts, credential exclusion, private and unique artifacts, and redirects.
@@ -200,7 +189,7 @@ when accepting possible system slowdown; results with paging are not clean perfo
 
 These smoke tests are not a real-repo benchmark. After they pass, use the prepared guided date-fns
 and dayjs tasks, then independent prompts, one run at a time. Pin the same server configuration,
-sampling settings, instructions, test command, and deadline across any comparison.
+sampling settings, instructions, verification command, and deadline across any comparison.
 
 ## Progressive real-repo checks (Go only)
 
@@ -222,7 +211,8 @@ Advance manually to `dayjs-guided`, then `date-fns-independent` and `dayjs-indep
 inspecting the preceding result. Each invocation starts with fresh disposable fixtures and stops on
 the first failed stage; it does not reuse a previous model patch. Real-repo preparation copies files
 without Git history, reuses preinstalled dependencies, and installs the manifest's pristine oracle
-tests. Only the issue report (with test instructions adapted to `run_tests`) goes into the prompt.
+tests. Only the issue report goes into the prompt; the host test runner executes verification after
+the model run.
 The runner verifies each expected test by name, rejects missing/skipped tests and regressions, and
 rejects all file changes except the issue's designated source files. Jest coverage stays enabled but
 writes outside the worktree. This is a controlled regression experiment, not a hostile-code sandbox:

@@ -40,7 +40,7 @@ var modelProfiles = []modelProfile{
 		// Coding Tasks"), distinct from both its general-tasks thinking profile (temp 1.0,
 		// presence_penalty 1.5) and the instruct/non-thinking profile above. Requires the
 		// server started WITHOUT --reasoning off (thinking is this model's default mode).
-		// Exists to A/B against the non-thinking default: a live agentic run this session
+		// Exists to A/B against the non-thinking default: a live agentic run
 		// found the non-thinking model exploring a real repo for minutes without ever
 		// committing to an edit, which thinking mode may or may not fix.
 		name:            "qwen36-35b-a3b-thinking",

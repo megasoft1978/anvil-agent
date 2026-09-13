@@ -10,7 +10,7 @@ earlier text, only as a defensible replacement built from the same goals.
 Benchmarking a coding model on "real" bugs is worthless if the model may have seen the bug (or
 its fix) during training, and worthless again if the "bug" is itself AI-generated rather than a
 real defect a human found and fixed. This document is the checklist a candidate fixture must pass
-before it's used to measure Qwen3.6-35B-A3B (or any future target model) against Sonnet 5.
+before it's used to measure the current Qwen3.6-35B-A3B target against Sonnet 5.
 
 ## Date boundary
 

@@ -2,4 +2,4 @@ KIT_VERSION=2026.09.15
 CONFIG_SIG=9f3de24b2a7ac89f
 MODEL_FILE=Qwen3.6-35B-A3B-UD-IQ2_M.gguf
 MODEL_BYTES=11522702304
-NOTES=Retargeted from Gemma-4-26B-A4B to Qwen3.6-35B-A3B (see setup.sh's SERVER_FLAGS comment for sampling/cache-flag rationale specific to this model). Project renamed gemma4-coding-kit -> anvil-agent; go-agent replaces pi as the harness. CONFIG_SIG changed because MODEL_REPO/MODEL_FILE/MODEL_BYTES/MODEL_ID/SERVER_FLAGS/CHECK_STRINGS all changed for the new target model.
+NOTES=Qwen3.6-35B-A3B is the current target model. See setup.sh's SERVER_FLAGS comment for sampling and cache-flag rationale specific to this model; go-agent is the controlled coding harness.

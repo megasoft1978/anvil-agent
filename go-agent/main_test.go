@@ -20,8 +20,7 @@ func TestCLIInvalidInputs(t *testing.T) {
 		{"--prompt", "a", "--model", ""}, {"--prompt", "a", "--endpoint", "file:///tmp/model"},
 		{"--prompt", "a", "--endpoint", "http://user:secret@localhost/v1"},
 		{"--prompt", "a", "--endpoint", "http://localhost/v1?secret=x"},
-		{"--prompt", "a", "--test-command", "[]"}, {"--prompt", "a", "--test-command", "null"},
-		{"--prompt", "a", "--test-command", "npm test"}, {"--prompt-file", "/nonexistent-prompt"},
+		{"--prompt-file", "/nonexistent-prompt"},
 		{"--prompt", "a", "--instructions", "/nonexistent-instructions"},
 		{"--prompt", "a", "--root", "/nonexistent-worktree"}, {"--unknown"},
 	} {

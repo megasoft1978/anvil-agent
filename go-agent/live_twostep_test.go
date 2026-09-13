@@ -12,9 +12,8 @@ import (
 // TestLiveModelTwoStep tests a workflow-level change instead of another edit-loop mechanism:
 // split repair into two independent agent calls with no shared conversation state.
 //
-// Step "diagnose": independent navigation (no source preload, no rich-edit-feedback, no
-// auto-test-after-edit, no dedup-reads — none of 2026-09-11's opt-in mechanisms), read/search
-// tools only (no edit, no run_tests), asked only to identify and explain the root cause.
+// Step "diagnose": independent navigation with no source preload or rich edit feedback, read/search
+// tools only (no edit), asked only to identify and explain the root cause.
 //
 // Step "implement": a completely fresh agent call (no memory of step 1's transcript),
 // source-supplied + edit-only tools (the one condition that has produced real edits today),
@@ -61,7 +60,7 @@ func TestLiveModelTwoStep(t *testing.T) {
 		stageBudget = seconds
 	}
 
-	// --- Step 1: diagnose. Independent navigation, no edit/run_tests, no source preload. ---
+	// --- Step 1: diagnose. Independent navigation, no edit, no source preload. ---
 	root1 := t.TempDir()
 	report1 := filepath.Join(t.TempDir(), "oracle1.json")
 	task1, _, _ := prepareRepo(t, pilot, stage, root1, report1)
@@ -81,7 +80,7 @@ func TestLiveModelTwoStep(t *testing.T) {
 	}
 	defer diagnoseTrace.Close()
 	trace1 := &Trace{Writer: diagnoseTrace, Progress: os.Stderr}
-	tools1 := &Tools{Root: root1Opened, ToolTimeout: stageBudget, Trace: trace1,
+	tools1 := &Tools{Root: root1Opened, Trace: trace1,
 		Edited: map[string]bool{}, SearchEnabled: true}
 	cfg1 := Config{Model: model, MaxTurns: 16, MaxTokens: 3072, Temperature: 0, MaxHistoryBytes: 64 << 10, RecoverToolCalls: true}
 	ctx1, cancel1 := context.WithTimeout(context.Background(), stageBudget)
@@ -103,8 +102,8 @@ func TestLiveModelTwoStep(t *testing.T) {
 	task2, command2, before2 := prepareRepo(t, pilot, stage, root2, report2)
 	os.Unsetenv("ANVIL_PRELOAD_SOURCES")
 	task2.Report += "\n\nSelf-diagnosis from an earlier independent investigation pass by this " +
-		"same model (not evaluator-authored; verify it by reading the supplied source and testing, " +
-		"not by trusting it alone):\n" + result1.Answer
+		"same model (not evaluator-authored; verify it by reading the supplied source, " +
+		"not by trusting it alone; the host verifier runs afterward):\n" + result1.Answer
 
 	root2Opened, err := os.OpenRoot(root2)
 	if err != nil {
@@ -117,20 +116,23 @@ func TestLiveModelTwoStep(t *testing.T) {
 	}
 	defer implementTrace.Close()
 	trace2 := &Trace{Writer: implementTrace, Progress: os.Stderr}
-	tools2 := &Tools{Root: root2Opened, TestCommand: command2, ToolTimeout: stageBudget, Trace: trace2,
+	tools2 := &Tools{Root: root2Opened, Trace: trace2,
 		Edited: map[string]bool{}, ReadDisabled: true}
 	cfg2 := Config{Model: model, MaxTurns: 16, MaxTokens: 3072, Temperature: 0, MaxHistoryBytes: 64 << 10, RecoverToolCalls: true}
 	ctx2, cancel2 := context.WithTimeout(context.Background(), stageBudget)
 	defer cancel2()
 	result2 := runAgent(ctx2, cfg2, task2.Report, client, tools2, trace2)
 	t.Logf("implement step: status=%s turns=%d tool_calls=%d edited=%v", result2.Status, result2.Turns, result2.ToolCalls, result2.EditedFiles)
+	verification, verificationErr := runCommand(context.Background(), root2, command2, stageBudget)
+	verificationOK := verificationErr == nil && verification.ExitCode == 0 && !verification.TimedOut
+	t.Logf("host verification: %+v error=%v", verification, verificationErr)
 
 	after2, err := repoSnapshot(root2)
 	if err != nil {
 		t.Fatal(err)
 	}
 	changeErr := checkRepoChanges(task2, stage, before2, after2)
-	fixed := changeErr == nil
+	fixed := changeErr == nil && verificationOK
 	reportErr := checkRepoReport(report2, task2, fixed)
 	t.Logf("oracle: changes=%v report=%v (fixed=%v)", changeErr, reportErr, fixed)
 	if fixed && reportErr == nil {

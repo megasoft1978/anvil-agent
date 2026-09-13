@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// Grade confirmed source edits even when generation timed out before the final test command.
+// Grade confirmed source edits even when generation timed out before the final verification command.
 // Replay only successful edit results, never an unconfirmed write-ahead backup.
 func TestReplayRealRepoOracle(t *testing.T) {
 	trace := os.Getenv("ANVIL_REPLAY_TRACE")

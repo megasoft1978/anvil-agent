@@ -7,8 +7,8 @@ import (
 	"strings"
 )
 
-// Qwen2.5-Coder-14B-Instruct (through this llama-server build) emits the intended tool
-// call as a fenced JSON object in plain content instead of a native tool_calls entry,
+// Some compatible model/server combinations emit the intended tool call as a fenced
+// JSON object in plain content instead of a native tool_calls entry,
 // e.g.:
 //
 //	To fix the sum fixture, I need to inspect the relevant files first.
@@ -22,8 +22,8 @@ import (
 //	}
 //	```
 //
-// Two verbatim captures this session show narration both before and after the fence —
-// unlike xml_attr's tag, this model never emits the call as the entire message, so a
+// Regression captures show narration both before and after the fence — unlike xml_attr's
+// tag, the response does not emit the call as the entire message, so a
 // whole-message-match rule (as used for xml_attr) would recover nothing real here.
 // Instead: there must be exactly one ```json-fenced block in the message, and its
 // content must parse as exactly {"name": string, "arguments": object} with no other

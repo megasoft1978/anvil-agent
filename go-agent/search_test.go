@@ -118,7 +118,7 @@ func TestSearchLimitsAndSchema(t *testing.T) {
 		t.Fatal("ignored cancellation")
 	}
 	for _, enabled := range []bool{false, true} {
-		data, err := json.Marshal(toolDefinitions(true, enabled, false))
+		data, err := json.Marshal(toolDefinitions(enabled, false))
 		if err != nil {
 			t.Fatal(err)
 		}

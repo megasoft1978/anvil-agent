@@ -1,7 +1,7 @@
 [
   {
     "name": "EXP-077 closer-only stop",
-    "source": "Archived EXP-077 failure described in pi-extensions/gemma4-tool-recovery.ts",
+    "source": "Archived malformed tool-call regression",
     "content": "",
     "reasoning_content": "<|channel>thought\n<tool_call|><channel|>",
     "finish_reason": "stop",

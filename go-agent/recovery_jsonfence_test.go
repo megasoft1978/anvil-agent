@@ -12,8 +12,7 @@ func TestJSONFenceRecovery(t *testing.T) {
 		wantArg string
 	}{
 		{
-			// Verbatim capture from Qwen2.5-Coder-14B-Instruct this session: fence first,
-			// narration after.
+			// Regression capture: fence first, narration after.
 			name:    "captured_fence_then_narration",
 			input:   "```json\n{\n  \"name\": \"read\",\n  \"arguments\": {\n    \"path\": \"test.txt\"\n  }\n}\n```\n\nAfter reading the file, you can use the `edit` function to modify its contents.",
 			wantFn:  "read",

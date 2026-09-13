@@ -33,7 +33,7 @@ func newTools(t *testing.T) (*Tools, *bytes.Buffer) {
 	}
 	t.Cleanup(func() { root.Close() })
 	trace := &bytes.Buffer{}
-	return &Tools{Root: root, ToolTimeout: time.Second, Trace: &Trace{Writer: trace}, Edited: map[string]bool{}}, trace
+	return &Tools{Root: root, Trace: &Trace{Writer: trace}, Edited: map[string]bool{}}, trace
 }
 
 func config() Config {
@@ -79,7 +79,7 @@ func TestCLIEndToEnd(t *testing.T) {
 		case 2:
 			reply(w, Message{ToolCalls: []ToolCall{call("edit", `{"path":"sum.txt","oldText":"wrong","newText":"right"}`)}}, "tool_calls")
 		case 3:
-			reply(w, Message{Content: "Fixed and tested."}, "stop")
+			reply(w, Message{Content: "Fixed."}, "stop")
 		default:
 			t.Error("unexpected extra request")
 			http.Error(w, "unexpected", 500)
@@ -88,7 +88,7 @@ func TestCLIEndToEnd(t *testing.T) {
 	defer server.Close()
 	var stdout, stderr bytes.Buffer
 	exit := cli(context.Background(), []string{"--root", root, "--output", filepath.Join(dir, "runs"), "--endpoint", server.URL + "/v1",
-		"--prompt", "Fix the sum fixture", "--test-command", `["/bin/sh","-c","test \"$(cat sum.txt)\" = right"]`, "--timeout", "5s"}, &stdout, &stderr)
+		"--prompt", "Fix the sum fixture", "--timeout", "5s"}, &stdout, &stderr)
 	if exit != 0 {
 		t.Fatalf("exit %d: %s\n%s", exit, stdout.String(), stderr.String())
 	}
@@ -96,7 +96,7 @@ func TestCLIEndToEnd(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &summary); err != nil {
 		t.Fatal(err)
 	}
-	if summary.Status != "completed" || summary.Turns != 3 || summary.ToolCalls != 2 || summary.Verification == nil || summary.Verification.ExitCode != 0 {
+	if summary.Status != "completed" || summary.Turns != 3 || summary.ToolCalls != 2 {
 		t.Fatalf("summary: %+v", summary)
 	}
 	data, _ := os.ReadFile(filepath.Join(root, "sum.txt"))
@@ -294,7 +294,7 @@ func TestBannedToolClearsAfterOneTurn(t *testing.T) {
 }
 
 func TestPromptProfiles(t *testing.T) {
-	for _, profile := range []string{"baseline", "focused", "test-first"} {
+	for _, profile := range []string{"baseline", "focused"} {
 		t.Run(profile, func(t *testing.T) {
 			tools, trace := newTools(t)
 			cfg := config()
@@ -308,9 +308,6 @@ func TestPromptProfiles(t *testing.T) {
 				want := systemPrompt
 				if profile == "focused" {
 					want = focusedPrompt
-				}
-				if profile == "test-first" {
-					want = testFirstPrompt
 				}
 				if request.Messages[0].Content != want+"\nEXPLICIT_PROJECT_INSTRUCTIONS" {
 					t.Error("incorrect initial prompt")
@@ -378,48 +375,6 @@ func TestDeduplicatedReadSeesEdits(t *testing.T) {
 	}
 	if strings.Count(trace.String(), `"type":"read_deduplicated"`) != 1 {
 		t.Fatal("dedup event missing or repeated")
-	}
-}
-
-// TestCompletionVerificationRetry exercises the retry loop: the model declares done with
-// a wrong fix, the harness's own end-of-run test catches it and hands the failure back
-// instead of ending the run, and the model gets a bounded chance to actually fix it.
-func TestCompletionVerificationRetry(t *testing.T) {
-	tools, trace := newTools(t)
-	if err := os.WriteFile(filepath.Join(tools.Root.Name(), "a"), []byte("wrong"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	tools.TestCommand = []string{"/bin/sh", "-c", `test "$(cat a)" = right`}
-	cfg := config()
-	turn := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		turn++
-		var request Request
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Error(err)
-		}
-		switch turn {
-		case 1:
-			reply(w, Message{ToolCalls: []ToolCall{call("edit", `{"path":"a","oldText":"wrong","newText":"still-wrong"}`)}}, "tool_calls")
-		case 2:
-			reply(w, Message{Content: "Fixed."}, "stop")
-		case 3:
-			last := request.Messages[len(request.Messages)-1]
-			if last.Role != "user" || !strings.Contains(last.Content, "exit_code=1") {
-				t.Fatalf("missing completion-failure message: %+v", last)
-			}
-			reply(w, Message{ToolCalls: []ToolCall{call("edit", `{"path":"a","oldText":"still-wrong","newText":"right"}`)}}, "tool_calls")
-		default:
-			reply(w, Message{Content: "Fixed and verified."}, "stop")
-		}
-	}))
-	defer server.Close()
-	result := runAgent(context.Background(), cfg, "task", &Client{URL: server.URL, HTTP: server.Client()}, tools, &Trace{Writer: trace})
-	if result.Status != "completed" || result.ToolCalls != 2 || turn != 4 {
-		t.Fatalf("%+v turn=%d", result, turn)
-	}
-	if !strings.Contains(trace.String(), `"type":"completion_verification_failed"`) {
-		t.Fatal("auto_test event not traced")
 	}
 }
 

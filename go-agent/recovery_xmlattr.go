@@ -7,8 +7,8 @@ import (
 	"strings"
 )
 
-// Some models (observed: Qwen2.5-Coder-7B-Instruct through this llama-server build)
-// emit the intended tool call as an XML-attribute-style tag in plain content instead of
+// Some compatible model/server combinations emit the intended tool call as an
+// XML-attribute-style tag in plain content instead of
 // a native tool_calls entry, e.g.:
 //
 //	```xml
