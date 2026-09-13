@@ -59,9 +59,7 @@ type Config struct {
 	PromptProfile         string   `json:"prompt_profile,omitempty"`
 	ReadFormat            string   `json:"read_format,omitempty"`
 	DedupReads            bool     `json:"dedup_reads"`
-	EnableSearch          bool     `json:"enable_search"`
 	TaskReminder          bool     `json:"task_reminder"`
-	EditOnly              bool     `json:"edit_only"`
 	RichEditFeedback      bool     `json:"rich_edit_feedback"`
 	DetectRepeatedEdits   bool     `json:"detect_repeated_edits"`
 	Ledger                bool     `json:"ledger"`
