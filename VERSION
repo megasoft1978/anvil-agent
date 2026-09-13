@@ -1,5 +1,5 @@
 KIT_VERSION=2026.09.15
-CONFIG_SIG=b09c5c510ef0c100
-MODEL_FILE=gemma-4-26B-A4B-it-UD-IQ2_M.gguf
-MODEL_BYTES=10014755296
-NOTES=AGENTS.md gained a new section, "Always end with an edit, not just a diagnosis," addressing EXP-077's dominant failure mode (research repo): in 2 of 3 real-repo runs the model correctly localized the bug via its own tool use, then never applied an edit. This section is explicitly marked as this session's own finding, not yet suite-measured. CONFIG_SIG changed because AGENTS_MD_BODY is part of the hash (SERVER_FLAGS/CTX/etc. are unchanged). A new, not-yet-shipped pi extension (gemma4-forced-tool-turn.ts, research repo pi-extensions/) sets tool_choice:"required" for Gemma-4 requests, forcing llama-server's non-lazy tool-call grammar to structurally rule out the malformed-tool-call failure class -- built but deliberately not wired into step_pi_extensions() yet, pending EXP-079's A/B measurement (baseline vs baseline+this extension) confirming it helps without regressing anything. The HF-hosting migration to the attnQ4K requant is unrelated and still in progress (slow upload) -- MODEL_FILE/MODEL_BYTES here are unchanged.
+CONFIG_SIG=9f3de24b2a7ac89f
+MODEL_FILE=Qwen3.6-35B-A3B-UD-IQ2_M.gguf
+MODEL_BYTES=11522702304
+NOTES=Retargeted from Gemma-4-26B-A4B to Qwen3.6-35B-A3B (see setup.sh's SERVER_FLAGS comment for sampling/cache-flag rationale specific to this model). Project renamed gemma4-coding-kit -> anvil-agent; go-agent replaces pi as the harness. CONFIG_SIG changed because MODEL_REPO/MODEL_FILE/MODEL_BYTES/MODEL_ID/SERVER_FLAGS/CHECK_STRINGS all changed for the new target model.

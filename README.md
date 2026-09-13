@@ -22,44 +22,32 @@ defaults, and its server flags are one swappable configuration, not baked into t
 ## Benchmarks
 
 Bugs fixed across 9 realistic multi-file projects (React + Express + TypeScript), reported the way you'd
-actually describe them to a coding agent: by symptom, never by cause.
-
-Local model under test: **Qwen3.6-35B-A3B-UD-IQ2_M** (this repo's shipped local config — see
-`go-agent/profiles.go`). Measured two ways: single-shot completion via `bench.mjs` (no tools — a
-lighter check than what `go-agent` itself actually does), and agentically through the real `go-agent`
-binary (Read/Edit tools, same as `go-agent` actually runs it) — see the table's second row and the note
-below it for why they differ so much. Sonnet 5 / Opus 5 ran the same 9 scenarios agentically for
-comparison.
+actually describe them to a coding agent: by symptom, never by cause. Every model below was run
+**agentically** — real Read/Edit tools, no test feedback in the loop, same 9 scenarios, same
+`benchmarks/grade.mjs` oracle — because that's how this project is actually used; a single raw completion
+with no tools isn't a realistic usage pattern, so that measurement has been dropped rather than kept as a
+misleadingly-high headline number.
 
 | Model | Bugs fixed | Notes |
 |---|---|---|
-| **Qwen3.6-35B-A3B-UD-IQ2_M** (local, shipped config, single-shot) | 32/44 (73%) | 22.5 tok/s, 8,959 tokens, 481.1s wall, 55% mean speculative-decode acceptance |
-| **Qwen3.6-35B-A3B-UD-IQ2_M** (local, shipped config, **agentic** — real `go-agent` binary, Read/Edit tools, no test feedback, 16-turn cap, n=1) | 20/44 (45%) | 7 of 9 scenarios hit the 16-turn cap without finishing (1 of those, `notify-channel`, never made a single edit); only 2 of 9 reached `"completed"` on their own |
+| **Qwen3.6-35B-A3B-UD-IQ2_M** (local, this repo's shipped config — see `go-agent/profiles.go`; real `go-agent` binary, Read/Edit tools, no test feedback, 16-turn cap, n=1) | 20/44 (45%) | 7 of 9 scenarios hit the 16-turn cap without finishing (1 of those, `notify-channel`, never made a single edit); only 2 of 9 reached `"completed"` on their own |
 | **claude-sonnet-5** (agentic, Claude Code, 2026-09-13) | 41/44 (93%) | avg ~77s wall-clock / ~61k tokens per scenario |
 | **claude-opus-5** (agentic, Claude Code, 2026-09-13) | 43/44 (98%) | avg ~34s wall-clock / ~50k tokens per scenario |
 
-**Agentic made the local model score *worse*, not better** — 45% vs. single-shot's 73%. This isn't noise:
-single-shot hands the model the whole bug report and every file at once and asks for one complete answer,
-which plays to what a 2-bit, 3B-active-param model can still do reasonably well. The real agentic loop
-(read a file, decide, edit, maybe re-read) is exactly where this model's documented weakness shows up —
-it tends to re-read instead of committing to an edit, and burns its turn budget before finishing. This
+The local model's biggest weakness here isn't understanding the bug — it's finishing: this quant tends to
+re-read files instead of committing to an edit, and burns its 16-turn budget before wrapping up. That
 matches this repo's own prior live-testing history (see `go-agent/TESTING.md` / historical session notes)
-finding the same "oscillates, never commits" pattern on other tasks. n=1 per scenario here (agentic runs
-are far more expensive than single-shot's one HTTP call each) — treat the exact number as directional, not
-a tight measurement, but the single-shot-beats-agentic direction is unlikely to be noise given how
-one-sided it was (7 of 9 scenarios truncated).
+finding the same "oscillates, never commits" pattern on other tasks. n=1 per scenario here (an agentic run
+costs far more than a single completion) — treat the exact number as directional, not a tight measurement.
 
 Sonnet's 3 misses: `cart-checkout`'s discount-before-tax ordering, and 2 of `realtime-sync`'s 6 bugs (the
 sender seeing its own broadcast edit, and the `opId`-collision case). Opus's 1 miss: that same
-`opId`-collision case — the one bug neither model fixed. Sonnet/Opus's per-scenario time/tokens include
-full agentic tool use (reads, edits, re-reads) and aren't directly comparable to the local model's raw
-decode tok/s — different measurement, not a faster/slower claim on its own (see below for why the local
-number is single-shot in the first place).
+`opId`-collision case — the one bug neither model fixed.
 
-Measured 2026-09-13 against the shipped config on an Apple M1 Mac mini, 16GB —
-`setup.sh --benchmark` reproduces the local-model row on your own hardware (needs a full clone; the
-scenario data doesn't fit in a single script). Runs in about 12GB total: ~10.7GB of model weights on disk,
-plus working memory while the server runs.
+Measured 2026-09-13 on an Apple M1 Mac mini, 16GB. Raw decode speed for the shipped config, measured
+separately (not part of the scenario runs above): **22.5 tok/s** — `setup.sh --report-speed` reproduces
+this on your own hardware. Runs in about 12GB total: ~10.7GB of model weights on disk, plus working memory
+while the server runs.
 
 | Chip | tokens/sec (Qwen3.6-35B-A3B-UD-IQ2_M, shipped config) |
 |---|---|
@@ -77,11 +65,6 @@ against M1's ~68GB/s — this harness is memory-bandwidth-bound (a MoE model rea
 weights per token, not compute-bound math), so tokens/sec tracks bandwidth roughly linearly. Not measured —
 run `--report-speed` to contribute a real one.
 
-Sonnet 5 and Opus 5 were graded the same way (same 9 scenarios, same bug reports, same
-`benchmarks/grade.mjs` oracle) but run as an agentic Claude Code task (Read/Edit tools, real files on
-disk) instead of one raw completion — treat the comparison as "what a coding agent driven by each model
-scores here," not a clean apples-to-apples inference benchmark.
-
 **Code-quality verdict, judged by Opus 5 itself** (given both models' diffs for 3 of the 9 scenarios,
 told explicitly which set was its own output, asked to be self-critical rather than favor itself):
 Opus 5's fixes were judged clearly better on two decisive points — `cart-checkout`'s stock-reservation
@@ -90,13 +73,12 @@ socket `send()` call that Sonnet left able to throw mid-reconnect. Sonnet's code
 function to no longer actually drain anything, a naming/behavior mismatch Opus avoided. Opus's fixes did
 carry some real scope creep (exponential backoff, a monotonic clock helper) beyond what was asked.
 
-**Is the 73% score just the 2-bit quantization?** Partly, but this isn't a clean isolation — Qwen3.6-35B-A3B
+**Is the 45% score just the 2-bit quantization?** Partly, but this isn't a clean isolation — Qwen3.6-35B-A3B
 run here is both a much smaller model (3B active params per token, MoE) *and* quantized to ~2.5 bits/weight
-(IQ2_M) *and* running single-shot with no tools, all at once, versus Sonnet/Opus running full agentic loops.
-2-bit-class quantization is well-documented to cause real, measurable quality loss on its own — so it's a
-plausible contributor to the gap — but nothing here isolates quantization from model scale or from the
-tool-less single-shot setup. An unquantized Qwen3.6-35B-A3B run (not available locally) would be needed to
-actually separate those effects.
+(IQ2_M), versus Sonnet/Opus at full precision and far larger scale. 2-bit-class quantization is well-
+documented to cause real, measurable quality loss on its own — so it's a plausible contributor to the gap —
+but nothing here isolates quantization from model scale. An unquantized Qwen3.6-35B-A3B run (not available
+locally) would be needed to actually separate those effects.
 
 <details>
 <summary><strong>Advanced options</strong></summary>
