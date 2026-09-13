@@ -140,7 +140,7 @@ func toolDefinitions(withTests, withSearch, withWrite bool) []ToolDefinition {
 		tools = append(tools, makeTool("search", "Find literal text across the repository (or under one file/directory, if path is given). Skips .git, node_modules, and other generated/build directories, and binary files. Returns bounded matching line numbers with nearby source. Use to locate a function or symbol before guessing filenames or rereading whole files. Not a regex search.", map[string]any{"path": str("Relative file or directory path; omit or use . to search the whole worktree"), "text": str("Non-empty literal text to find, such as clone(")}, "text"))
 	}
 	if withWrite {
-		tools = append(tools, makeTool("write", "Create a NEW file with the given content. Fails if the file already exists -- use edit for existing files. Parent directories are created.",
+		tools = append(tools, makeTool("write", "Create a NEW file with the given content. Fails if the file already exists -- use edit for existing files. Parent directories are created automatically from the path; there is no separate directory-creation step and no reason to write an empty placeholder file to make one.",
 			map[string]any{"path": str("Relative file path; must not already exist"), "content": str("Complete file content")}, "path", "content"))
 	}
 	return tools
