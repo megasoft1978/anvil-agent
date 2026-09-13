@@ -24,18 +24,28 @@ defaults, and its server flags are one swappable configuration, not baked into t
 Bugs fixed across 9 realistic multi-file projects (React + Express + TypeScript), reported the way you'd
 actually describe them to a coding agent: by symptom, never by cause.
 
-Model under test: **Qwen3.6-35B-A3B-UD-IQ2_M** (this repo's shipped local config — see `go-agent/profiles.go`).
+Local model under test: **Qwen3.6-35B-A3B-UD-IQ2_M** (this repo's shipped local config — see
+`go-agent/profiles.go`), single-shot completion via `bench.mjs` (no tools) — a lighter check than what
+`go-agent` itself actually does (see "Single-shot vs. agentic" below). Sonnet 5 / Opus 5 ran the same
+9 scenarios agentically (Read/Edit tools, real files) for comparison.
 
-| | Score |
-|---|---|
-| Bugs fixed | **32/44 (73%)** |
-| Generation speed | **22.5 tok/s** (8,959 tokens generated, 481.1s wall across all 9 scenarios) |
-| Mean speculative-decoding acceptance | 55% |
+| Model | Bugs fixed | Notes |
+|---|---|---|
+| **Qwen3.6-35B-A3B-UD-IQ2_M** (local, shipped config, single-shot) | 32/44 (73%) | 22.5 tok/s, 8,959 tokens, 481.1s wall, 55% mean speculative-decode acceptance |
+| **claude-sonnet-5** (agentic, Claude Code, 2026-09-13) | 41/44 (93%) | avg ~77s wall-clock / ~61k tokens per scenario |
+| **claude-opus-5** (agentic, Claude Code, 2026-09-13) | 43/44 (98%) | avg ~34s wall-clock / ~50k tokens per scenario |
+
+Sonnet's 3 misses: `cart-checkout`'s discount-before-tax ordering, and 2 of `realtime-sync`'s 6 bugs (the
+sender seeing its own broadcast edit, and the `opId`-collision case). Opus's 1 miss: that same
+`opId`-collision case — the one bug neither model fixed. Sonnet/Opus's per-scenario time/tokens include
+full agentic tool use (reads, edits, re-reads) and aren't directly comparable to the local model's raw
+decode tok/s — different measurement, not a faster/slower claim on its own (see below for why the local
+number is single-shot in the first place).
 
 Measured 2026-09-13 against the shipped config on an Apple M1 Mac mini, 16GB —
-`setup.sh --benchmark` reproduces this on your own hardware (needs a full clone; the scenario data doesn't
-fit in a single script). Runs in about 12GB total: ~10.7GB of model weights on disk, plus working memory
-while the server runs.
+`setup.sh --benchmark` reproduces the local-model row on your own hardware (needs a full clone; the
+scenario data doesn't fit in a single script). Runs in about 12GB total: ~10.7GB of model weights on disk,
+plus working memory while the server runs.
 
 | Chip | tokens/sec (Qwen3.6-35B-A3B-UD-IQ2_M, shipped config) |
 |---|---|
@@ -53,24 +63,10 @@ against M1's ~68GB/s — this harness is memory-bandwidth-bound (a MoE model rea
 weights per token, not compute-bound math), so tokens/sec tracks bandwidth roughly linearly. Not measured —
 run `--report-speed` to contribute a real one.
 
-### Compared to Sonnet 5 / Opus 5
-
-Same 9 scenarios, same bug reports, graded with the same `benchmarks/grade.mjs` oracle — but run as an
-agentic Claude Code task (Read/Edit tools, real files on disk) instead of one raw completion against a
-local server, so treat this as "what a coding agent driven by each model scores here," not a clean apples-
-to-apples inference benchmark.
-
-| Model | Bugs fixed | Notes |
-|---|---|---|
-| **Qwen3.6-35B-A3B-UD-IQ2_M** (local, this repo's shipped config) | 32/44 (73%) | single-shot completion, no tools — see table above |
-| **claude-sonnet-5** (agentic, Claude Code, 2026-09-13) | 41/44 (93%) | avg ~77s wall-clock / ~61k tokens per scenario |
-| **claude-opus-5** (agentic, Claude Code, 2026-09-13) | 43/44 (98%) | avg ~34s wall-clock / ~50k tokens per scenario |
-
-Sonnet's 3 misses: `cart-checkout`'s discount-before-tax ordering, and 2 of `realtime-sync`'s 6 bugs (the
-sender seeing its own broadcast edit, and the `opId`-collision case). Opus's 1 miss: that same
-`opId`-collision case — the one bug neither model fixed. Sonnet's per-scenario time/tokens include full
-agentic tool use (reads, edits, re-reads) and aren't directly comparable to the local model's raw decode
-tok/s above — different measurement, not a faster/slower claim.
+Sonnet 5 and Opus 5 were graded the same way (same 9 scenarios, same bug reports, same
+`benchmarks/grade.mjs` oracle) but run as an agentic Claude Code task (Read/Edit tools, real files on
+disk) instead of one raw completion — treat the comparison as "what a coding agent driven by each model
+scores here," not a clean apples-to-apples inference benchmark.
 
 **Code-quality verdict, judged by Opus 5 itself** (given both models' diffs for 3 of the 9 scenarios,
 told explicitly which set was its own output, asked to be self-critical rather than favor itself):
