@@ -92,6 +92,10 @@ func (t *Tools) search(ctx context.Context, raw string) (any, error) {
 	matches := 0
 	filesScanned := 0
 	truncated := false
+	limit := t.SearchOutputLimit
+	if limit <= 0 {
+		limit = maxOutputBytes
+	}
 	scanFile := func(path string) error {
 		if truncated {
 			return nil
@@ -123,7 +127,7 @@ func (t *Tools) search(ctx context.Context, raw string) (any, error) {
 			for n := max(0, i-2); n < min(len(lines), i+3); n++ {
 				fmt.Fprintf(&snippet, "%d: %s\n", n+1, lines[n])
 			}
-			if matches >= searchMaxMatches || result.Len()+snippet.Len()+1 > maxOutputBytes {
+			if matches >= searchMaxMatches || result.Len()+snippet.Len()+1 > limit {
 				truncated = true
 				return nil
 			}

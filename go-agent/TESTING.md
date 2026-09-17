@@ -55,6 +55,7 @@ confirm that the pristine fixtures still reproduce their recorded failures:
 
 ```sh
 ANVIL_PILOT=/path/to/prepared/pilot \
+  ANVIL_BASELINE_TASKS=immer-array-push-fix,zod-int-json-schema \
   go test -run '^TestPreparedRealRepoBaselines$' -v -count=1
 ```
 
@@ -63,7 +64,7 @@ Then run one stage at a time with a healthy server:
 ```sh
 ANVIL_LIVE=1 \
 ANVIL_PILOT=/path/to/prepared/pilot \
-ANVIL_REPO_STAGE=date-fns-guided \
+ANVIL_REPO_STAGE=immer-array-push-fix \
 go test -run '^TestLiveModel$' -v -count=1 -timeout=8m
 ```
 

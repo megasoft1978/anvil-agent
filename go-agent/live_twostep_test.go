@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -99,7 +100,7 @@ func TestLiveModelTwoStep(t *testing.T) {
 	root2 := t.TempDir()
 	report2 := filepath.Join(output, "twostep-"+stage+"-oracle.json")
 	os.Setenv("ANVIL_PRELOAD_SOURCES", "1")
-	task2, command2, before2 := prepareRepo(t, pilot, stage, root2, report2)
+	task2, _, before2 := prepareRepo(t, pilot, stage, root2, report2)
 	os.Unsetenv("ANVIL_PRELOAD_SOURCES")
 	task2.Report += "\n\nSelf-diagnosis from an earlier independent investigation pass by this " +
 		"same model (not evaluator-authored; verify it by reading the supplied source, " +
@@ -123,13 +124,21 @@ func TestLiveModelTwoStep(t *testing.T) {
 	defer cancel2()
 	result2 := runAgent(ctx2, cfg2, task2.Report, client, tools2, trace2)
 	t.Logf("implement step: status=%s turns=%d tool_calls=%d edited=%v", result2.Status, result2.Turns, result2.ToolCalls, result2.EditedFiles)
-	verification, verificationErr := runCommand(context.Background(), root2, command2, stageBudget)
+	verificationRoot, verificationCommand, verificationBefore := prepareVerificationRepo(t, root2, task2, stage, report2)
+	verification, verificationErr := runCommand(context.Background(), verificationRoot, verificationCommand, stageBudget)
 	verificationOK := verificationErr == nil && verification.ExitCode == 0 && !verification.TimedOut
 	t.Logf("host verification: %+v error=%v", verification, verificationErr)
 
 	after2, err := repoSnapshot(root2)
 	if err != nil {
 		t.Fatal(err)
+	}
+	verificationAfter, err := repoSnapshot(verificationRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(verificationBefore, verificationAfter) {
+		t.Fatal("test runner changed verification files")
 	}
 	changeErr := checkRepoChanges(task2, stage, before2, after2)
 	fixed := changeErr == nil && verificationOK

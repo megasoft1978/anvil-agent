@@ -20,13 +20,15 @@ const maxFileBytes = 1 << 20
 const maxOutputBytes = 32 << 10
 
 type Tools struct {
-	Root             *os.Root
-	Trace            *Trace
-	Edited           map[string]bool
-	SearchEnabled    bool
-	WriteEnabled     bool
-	ReadDisabled     bool
-	RichEditFeedback bool
+	Root              *os.Root
+	Trace             *Trace
+	Edited            map[string]bool
+	SearchEnabled     bool
+	WriteEnabled      bool
+	ReadDisabled      bool
+	RichEditFeedback  bool
+	ReadOutputLimit   int
+	SearchOutputLimit int
 }
 
 // editContextLines bounds the source window returned around an edit outcome: enough to show
@@ -215,12 +217,16 @@ func (t *Tools) Execute(ctx context.Context, call ToolCall) (any, error) {
 		start := min(offset-1, len(lines))
 		end := min(start+200, len(lines))
 		output := strings.Join(lines[start:end], "\n")
-		for len(output) > maxOutputBytes && end > start+1 {
+		limit := t.ReadOutputLimit
+		if limit <= 0 {
+			limit = maxOutputBytes
+		}
+		for len(output) > limit && end > start+1 {
 			end--
 			output = strings.Join(lines[start:end], "\n")
 		}
-		if len(output) > maxOutputBytes {
-			return nil, fmt.Errorf("line exceeds output limit of %d bytes", maxOutputBytes)
+		if len(output) > limit {
+			return nil, fmt.Errorf("line exceeds output limit of %d bytes", limit)
 		}
 		next := 0
 		if end < len(lines) {

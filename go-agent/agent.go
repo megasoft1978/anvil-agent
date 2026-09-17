@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -44,12 +45,14 @@ func (t *Trace) Event(kind string, data any) error {
 }
 
 type Config struct {
+	ExperimentID          string   `json:"experiment_id,omitempty"`
 	Model                 string   `json:"model"`
 	MaxTurns              int      `json:"max_turns"`
 	MaxTokens             int      `json:"max_tokens"`
 	Temperature           float64  `json:"temperature"`
 	TopP                  *float64 `json:"top_p,omitempty"`
 	TopK                  *int     `json:"top_k,omitempty"`
+	MinP                  *float64 `json:"min_p,omitempty"`
 	PresencePenalty       *float64 `json:"presence_penalty,omitempty"`
 	RepeatPenalty         *float64 `json:"repeat_penalty,omitempty"`
 	Seed                  *int     `json:"seed,omitempty"`
@@ -64,6 +67,12 @@ type Config struct {
 	DetectRepeatedEdits   bool     `json:"detect_repeated_edits"`
 	Ledger                bool     `json:"ledger"`
 	PreserveToolReasoning bool     `json:"preserve_tool_reasoning"`
+	ToolSchemaPolicy      string   `json:"tool_schema_policy,omitempty"`
+	ForceEditAfterReads   int      `json:"force_edit_after_reads,omitempty"`
+	CloseOutReserve       bool     `json:"close_out_reserve"`
+	RetryWithoutEdit      bool     `json:"retry_without_edit"`
+	ReadOutputLimit       int      `json:"read_output_limit,omitempty"`
+	SearchOutputLimit     int      `json:"search_output_limit,omitempty"`
 }
 
 type Summary struct {
@@ -192,6 +201,7 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 	repeats := 0
 	bannedTool := ""
 	readsSinceEdit := 0
+	noEditRetries := 0
 	const minCloseOutReserve = 10 * time.Second
 	// Live evidence (2026-09-12, TESTING.md item 7): given a real bug and enough turns to act,
 	// this model reliably finds the right file within 4-6 calls, then keeps reading anyway instead
@@ -201,7 +211,10 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 	// changing this model family's next-turn behavior on a related problem (the repeat-call
 	// stall); only removing a tool from the declared list did. This mirrors that same structural
 	// pattern, triggered by a read/search count instead of remaining time.
-	const forceEditAfterReads = 5
+	forceEditAfterReads := config.ForceEditAfterReads
+	if forceEditAfterReads <= 0 {
+		forceEditAfterReads = 5
+	}
 	for turn := 1; turn <= config.MaxTurns; turn++ {
 		if err := ctx.Err(); err != nil {
 			result.Error = err.Error()
@@ -243,8 +256,9 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 				closeOutReserve = remaining < reserve
 			}
 		}
-		request := Request{Model: config.Model, Messages: messages, Tools: toolDefinitions(tools.SearchEnabled, tools.WriteEnabled), ToolChoice: "auto", MaxTokens: config.MaxTokens, Temperature: config.Temperature, TopP: config.TopP, TopK: config.TopK, PresencePenalty: config.PresencePenalty, RepeatPenalty: config.RepeatPenalty, Seed: config.Seed, CachePrompt: true}
-		if readsSinceEdit >= forceEditAfterReads {
+		request := Request{Model: config.Model, Messages: messages, Tools: toolDefinitions(tools.SearchEnabled, tools.WriteEnabled), ToolChoice: "auto", MaxTokens: config.MaxTokens, Temperature: config.Temperature, TopP: config.TopP, TopK: config.TopK, MinP: config.MinP, PresencePenalty: config.PresencePenalty, RepeatPenalty: config.RepeatPenalty, Seed: config.Seed, CachePrompt: true}
+		dynamicToolSchema := config.ToolSchemaPolicy != "stable"
+		if dynamicToolSchema && readsSinceEdit >= forceEditAfterReads {
 			// Force-edit window: enough reads have happened with no edit that further reading is
 			// unlikely to be the missing ingredient (see forceEditAfterReads above). Remove read
 			// and search for this one turn so the model's only options are edit or finishing -- not a
@@ -264,7 +278,7 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 				}
 			}
 		}
-		if closeOutReserve {
+		if dynamicToolSchema && closeOutReserve && config.CloseOutReserve {
 			// Close-out reserve: time is short enough that another edit could not be
 			// verified before the deadline. Removing the tool (not just warning against
 			// it) forces the model toward a final answer, reusing the same
@@ -292,7 +306,7 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 			}
 			request.Tools = enabled
 		}
-		if bannedTool != "" {
+		if dynamicToolSchema && bannedTool != "" {
 			// A textual correction alone did not stop the model from repeating this exact
 			// call once; for this one turn, remove the tool from the declared set entirely
 			// so the dead action is ungenerable rather than merely discouraged. Applies for
@@ -323,17 +337,31 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 			result.Error = "request history exceeds byte limit; no silent truncation"
 			return
 		}
-		if err := trace.Event("request", request); err != nil {
+		toolSchema, _ := json.Marshal(request.Tools)
+		requestMeta := map[string]any{
+			"turn":               turn,
+			"request_bytes":      len(encoded),
+			"tool_schema_sha256": fmt.Sprintf("%x", sha256.Sum256(toolSchema)),
+			"tool_names":         declaredToolNames(request.Tools),
+			"tool_schema_policy": config.ToolSchemaPolicy,
+		}
+		if err := trace.Event("request", map[string]any{"meta": requestMeta, "request": request}); err != nil {
 			result.Error = err.Error()
 			return
 		}
 		result.Turns = turn
+		responseStart := time.Now()
 		response, err := client.Complete(ctx, request)
+		responseElapsed := time.Since(responseStart)
 		if err != nil {
 			result.Error = err.Error()
 			return
 		}
 		if err := trace.Event("response", response); err != nil {
+			result.Error = err.Error()
+			return
+		}
+		if err := trace.Event("response_meta", map[string]any{"turn": turn, "elapsed_ms": responseElapsed.Milliseconds()}); err != nil {
 			result.Error = err.Error()
 			return
 		}
@@ -374,7 +402,7 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 			var parser string
 			var recoveryErr error
 			if config.RecoverToolCalls {
-				call, parser, recoveryErr = recoverAny(declaredToolNames(request.Tools), message.Content, message.Reasoning)
+				call, parser, recoveryErr = recoverAnyWithTools(request.Tools, declaredToolNames(request.Tools), message.Content, message.Reasoning)
 			}
 			if call != nil && recoveryErr == nil {
 				call.ID = fmt.Sprintf("recovered_%s_%d", parser, turn)
@@ -420,6 +448,17 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 			}
 		}
 		if len(message.ToolCalls) == 0 {
+			if choice.FinishReason == "stop" && config.RetryWithoutEdit && len(tools.Edited) == 0 && noEditRetries < 1 {
+				noEditRetries++
+				messages = append(messages, message)
+				messages = append(messages, Message{Role: "user", Content: "The repair is not complete because no source file has been changed yet. Continue the original task and apply the required source edit with the native edit or write tool now. Use the information already gathered; do not only restate the diagnosis. Finish after the edit has been applied."})
+				if err := trace.Event("no_edit_retry", map[string]int{"after_turn": turn}); err != nil {
+					result.Error = err.Error()
+					return
+				}
+				recordTurn()
+				continue
+			}
 			if choice.FinishReason == "tool_calls" || strings.TrimSpace(message.Content) == "" {
 				result.Status = "empty_completion"
 				return
@@ -474,6 +513,7 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 			return
 		}
 		result.ToolCalls++
+		toolStarted := time.Now()
 		var value any
 		var toolErr error
 		var refusal string
@@ -550,7 +590,7 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 		if toolErr != nil {
 			payload = map[string]any{"error": toolErr.Error()}
 		}
-		if err := trace.Event("tool_result", map[string]any{"id": call.ID, "name": call.Function.Name, "output": payload}); err != nil {
+		if err := trace.Event("tool_result", map[string]any{"id": call.ID, "name": call.Function.Name, "turn": turn, "duration_ms": time.Since(toolStarted).Milliseconds(), "output": payload}); err != nil {
 			result.Error = err.Error()
 			return
 		}

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -33,7 +34,7 @@ func TestReplayRealRepoOracle(t *testing.T) {
 	}
 	report := filepath.Join(dir, "oracle.json")
 	root := t.TempDir()
-	task, command, before := prepareRepo(t, pilot, stage, root, report)
+	task, _, before := prepareRepo(t, pilot, stage, root, report)
 	file, err := os.Open(trace)
 	if err != nil {
 		t.Fatal(err)
@@ -108,7 +109,15 @@ func TestReplayRealRepoOracle(t *testing.T) {
 	if err := checkRepoChanges(task, stage, before, after); err != nil {
 		t.Fatal(err)
 	}
-	result, err := runCommand(context.Background(), root, command, 30*time.Second)
+	verificationRoot, verificationCommand, verificationBefore := prepareVerificationRepo(t, root, task, stage, report)
+	result, err := runCommand(context.Background(), verificationRoot, verificationCommand, 30*time.Second)
+	verificationAfter, verificationSnapshotErr := repoSnapshot(verificationRoot)
+	if verificationSnapshotErr != nil {
+		t.Fatal(verificationSnapshotErr)
+	}
+	if !reflect.DeepEqual(verificationBefore, verificationAfter) {
+		t.Fatal("test runner changed verification files")
+	}
 	log := fmt.Sprintf("replayed %d edits; exit=%d error=%v\n%s", edits, result.ExitCode, err, result.Output)
 	if writeErr := os.WriteFile(filepath.Join(dir, "result.txt"), []byte(log), 0600); writeErr != nil {
 		t.Fatal(writeErr)

@@ -15,14 +15,19 @@ type recoverer struct {
 	detect func(text string) bool
 	// parse returns every call found in text. allowed is the set of tool names declared
 	// for this turn; a recoverer that opts into useAllowed must reject any other name.
-	parse      func(text string, allowed map[string]bool) ([]ToolCall, error)
-	useAllowed bool
+	parse func(text string, allowed map[string]bool) ([]ToolCall, error)
+	// parseWithTools is optional. Formats whose argument values need the full JSON
+	// schema (Qwen's XML dialect is one) use it; keeping parse above preserves the
+	// small, format-focused API of the older recoverers and their fixtures.
+	parseWithTools func(text string, allowed map[string]bool, tools []ToolDefinition) ([]ToolCall, error)
+	useAllowed     bool
 }
 
 var recoverers = []recoverer{
 	{name: "leaked_markup", detect: hasMarkers, parse: leakedMarkupRecoverParse, useAllowed: false},
 	{name: "xml_attr", detect: xmlAttrDetect, parse: xmlAttrParse, useAllowed: true},
 	{name: "json_fence", detect: jsonFenceDetect, parse: jsonFenceParse, useAllowed: true},
+	{name: "qwen3_xml", detect: qwenXMLDetect, parse: qwenXMLParse, parseWithTools: qwenXMLParseWithTools, useAllowed: true},
 }
 
 // declaredToolNames returns the set of tool names available this turn, so a recovered
@@ -56,6 +61,13 @@ func detectRecoverers(texts ...string) []string {
 // detectors firing is treated as ambiguity, not a priority order to break: recovery
 // succeeds only if every firing parser independently agrees on the same call.
 func recoverAny(allowed map[string]bool, texts ...string) (*ToolCall, string, error) {
+	return recoverAnyWithTools(nil, allowed, texts...)
+}
+
+// recoverAnyWithTools is the production entry point. The compatibility wrapper above keeps
+// existing parser tests independent of the full request schema, while the agent supplies the
+// exact tools declared for the current turn so typed XML arguments are reconstructed safely.
+func recoverAnyWithTools(tools []ToolDefinition, allowed map[string]bool, texts ...string) (*ToolCall, string, error) {
 	var name string
 	var result *ToolCall
 	for _, r := range recoverers {
@@ -68,7 +80,13 @@ func recoverAny(allowed map[string]bool, texts ...string) (*ToolCall, string, er
 				continue
 			}
 			fires = true
-			found, err := r.parse(text, allowed)
+			var found []ToolCall
+			var err error
+			if r.parseWithTools != nil {
+				found, err = r.parseWithTools(text, allowed, tools)
+			} else {
+				found, err = r.parse(text, allowed)
+			}
 			if err != nil {
 				return nil, "", err
 			}

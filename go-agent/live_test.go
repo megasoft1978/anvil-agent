@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -188,7 +189,13 @@ func TestLiveModel(t *testing.T) {
 					t.Fatal("read/finish did not satisfy fixture")
 				}
 			} else {
-				verification, err := runCommand(context.Background(), root, command, 30*time.Second)
+				verificationRoot := root
+				verificationCommand := command
+				verificationBefore := map[string][32]byte(nil)
+				if stage != "edit-and-test" {
+					verificationRoot, verificationCommand, verificationBefore = prepareVerificationRepo(t, root, task, stage, report)
+				}
+				verification, err := runCommand(context.Background(), verificationRoot, verificationCommand, 30*time.Second)
 				if err != nil || verification.ExitCode != 0 || verification.TimedOut {
 					t.Fatalf("host verification failed: %+v %v", verification, err)
 				}
@@ -203,6 +210,13 @@ func TestLiveModel(t *testing.T) {
 					}
 					if err := checkRepoChanges(task, stage, snapshot, after); err != nil {
 						t.Fatal(err)
+					}
+					verificationAfter, err := repoSnapshot(verificationRoot)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if !reflect.DeepEqual(verificationBefore, verificationAfter) {
+						t.Fatal("test runner changed verification files")
 					}
 					if err := checkRepoReport(report, task, true); err != nil {
 						t.Fatal(err)

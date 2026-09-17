@@ -47,6 +47,7 @@ func cli(parent context.Context, argv []string, stdout, stderr io.Writer) int {
 	instructions := flags.String("instructions", "", "optional explicit instructions file; no ambient AGENTS.md discovery")
 	output := flags.String("output", "", "artifact parent directory outside the worktree; default: sibling .<worktree>-anvil-runs")
 	timeout := flags.Duration("timeout", 120*time.Second, "total deadline, including requests and tools")
+	experimentConfigPath := flags.String("experiment-config", "", "machine-readable local benchmark overrides; recorded in the trace")
 	// Everything below except sampling and prompt profile (now supplied per --model by
 	// profiles.go) is a fixed default rather than a CLI flag: rich edit feedback, the
 	// ledger's repeat-action refusal, read deduplication, 16 turns, and a 64 KiB history
@@ -54,13 +55,19 @@ func cli(parent context.Context, argv []string, stdout, stderr io.Writer) int {
 	// measurably helps or was never once adjusted in practice; --timeout, --max-tokens,
 	// and --model are the knobs that actually vary run to run.
 	config := Config{
-		ReadFormat:       "text",
-		RichEditFeedback: true,
-		Ledger:           true,
-		DedupReads:       true,
-		RecoverToolCalls: true,
-		MaxTurns:         16,
-		MaxHistoryBytes:  64 << 10,
+		ReadFormat:          "text",
+		RichEditFeedback:    true,
+		Ledger:              true,
+		DedupReads:          true,
+		RecoverToolCalls:    true,
+		MaxTurns:            16,
+		MaxHistoryBytes:     64 << 10,
+		ToolSchemaPolicy:    "dynamic",
+		ForceEditAfterReads: 5,
+		CloseOutReserve:     true,
+		RetryWithoutEdit:    false,
+		ReadOutputLimit:     maxOutputBytes,
+		SearchOutputLimit:   maxOutputBytes,
 	}
 	tui := flags.Bool("tui", false, "launch the interactive terminal UI instead of one-shot JSON output; silently falls back to headless when stdout is not a terminal")
 	write := flags.Bool("write", true, "allow creating new files with the write tool (create-only; edit still required to modify an existing file)")
@@ -81,6 +88,15 @@ func cli(parent context.Context, argv []string, stdout, stderr io.Writer) int {
 		return fail(fmt.Errorf("invalid limits or model"))
 	}
 	applyProfile(&config, profileFor(config.Model))
+	if *experimentConfigPath != "" {
+		data, err := os.ReadFile(*experimentConfigPath)
+		if err != nil {
+			return fail(err)
+		}
+		if err := applyExperimentOverrides(&config, data); err != nil {
+			return fail(err)
+		}
+	}
 	parsedURL, err := url.Parse(*endpoint)
 	if err != nil || parsedURL.Host == "" || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.User != nil || parsedURL.RawQuery != "" || parsedURL.Fragment != "" {
 		return fail(fmt.Errorf("endpoint must be an http(s) base URL without credentials, query, or fragment"))
@@ -181,7 +197,7 @@ func cli(parent context.Context, argv []string, stdout, stderr io.Writer) int {
 	client := &Client{URL: *endpoint, APIKey: os.Getenv("ANVIL_API_KEY"), HTTP: &http.Client{
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 	}}
-	tools := &Tools{Root: root, Trace: trace, Edited: map[string]bool{}, RichEditFeedback: config.RichEditFeedback, SearchEnabled: true, WriteEnabled: *write}
+	tools := &Tools{Root: root, Trace: trace, Edited: map[string]bool{}, RichEditFeedback: config.RichEditFeedback, SearchEnabled: true, WriteEnabled: *write, ReadOutputLimit: config.ReadOutputLimit, SearchOutputLimit: config.SearchOutputLimit}
 	sampler := startMemorySampler(*serverPID, 2*time.Second)
 	var result Summary
 	if *tui && isTerminal(stdout) {

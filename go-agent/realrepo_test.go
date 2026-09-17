@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -17,11 +18,8 @@ import (
 
 // The pilot is an explicit, trusted local fixture input, not model context.
 //
-// TestCommand and SourceFiles are optional: a task that omits them falls back to the original
-// date-fns/dayjs-specific hardcoded logic below (legacyCommand/legacySource), so the existing
-// EXP-085 pilot manifest (which predates these fields) keeps working unchanged. Any new fixture
-// should set both explicitly rather than relying on the legacy fallback, which only recognizes
-// the two original stage-name prefixes.
+// TestCommand and SourceFiles are optional for compatibility with the original date-fns/dayjs
+// pilot. New real-repository fixtures should set both explicitly.
 type repoTask struct {
 	Report      string            `json:"report"`
 	Tests       map[string]string `json:"test_files"`
@@ -29,6 +27,33 @@ type repoTask struct {
 	Pass        []string          `json:"pass_to_pass"`
 	TestCommand []string          `json:"test_command,omitempty"`
 	SourceFiles []string          `json:"source_files,omitempty"`
+}
+
+var repoTestFileArgPattern = regexp.MustCompile(`\.(test|spec)\.[cm]?[jt]sx?$`)
+
+// repoTestNameVariants accepts both the names emitted by a test runner that includes its test
+// file and the shorter names recorded in the curated oracle. Vitest can prefix assertion names
+// with the test-file argument when several projects are run together; the Node grader applies the
+// same normalization for the benchmark path.
+func repoTestNameVariants(name string, testCommand []string) []string {
+	trimmed := strings.TrimSpace(name)
+	variants := []string{trimmed}
+	seen := map[string]bool{trimmed: true}
+	for _, arg := range testCommand {
+		prefix := strings.TrimSpace(arg)
+		if !repoTestFileArgPattern.MatchString(prefix) {
+			continue
+		}
+		candidate := prefix + " " + trimmed
+		if strings.HasPrefix(trimmed, prefix+" ") {
+			candidate = strings.TrimSpace(strings.TrimPrefix(trimmed, prefix+" "))
+		}
+		if !seen[candidate] {
+			seen[candidate] = true
+			variants = append(variants, candidate)
+		}
+	}
+	return variants
 }
 
 // isSource reports whether path is one of this task's fixable source files: the set the model is
@@ -101,6 +126,75 @@ func repoSnapshot(root string) (map[string][32]byte, error) {
 	return result, err
 }
 
+func copyPreparedRepo(t *testing.T, source, root string) {
+	t.Helper()
+	files, err := repoSnapshot(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rel := range files {
+		data, err := os.ReadFile(filepath.Join(source, rel))
+		if err != nil {
+			t.Fatal(err)
+		}
+		dest := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(dest), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(dest, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Dependencies are prepared outside the model-visible source snapshot and linked only into
+	// the disposable model/verification roots. Hidden evaluator files are installed later in the
+	// verification root, after the model process has finished.
+	if info, err := os.Stat(filepath.Join(source, "node_modules")); err != nil || !info.IsDir() {
+		t.Fatal("prepared dependencies missing")
+	}
+	if err := os.Symlink(filepath.Join(source, "node_modules"), filepath.Join(root, "node_modules")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func installTaskTests(t *testing.T, root string, task repoTask) {
+	t.Helper()
+	for rel, oracle := range task.Tests {
+		if !filepath.IsLocal(rel) {
+			t.Fatal("oracle path escapes fixture")
+		}
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(oracle), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func taskCommand(task repoTask, stage, report string) []string {
+	if len(task.TestCommand) > 0 {
+		command := make([]string, len(task.TestCommand))
+		for i, arg := range task.TestCommand {
+			command[i] = strings.ReplaceAll(arg, "{{REPORT}}", report)
+		}
+		return command
+	}
+	return legacyCommand(stage, report)
+}
+
+func prepareVerificationRepo(t *testing.T, source string, task repoTask, stage, report string) (string, []string, map[string][32]byte) {
+	t.Helper()
+	root := t.TempDir()
+	copyPreparedRepo(t, source, root)
+	installTaskTests(t, root, task)
+	before, err := repoSnapshot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root, taskCommand(task, stage, report), before
+}
+
 func prepareRepo(t *testing.T, pilot, stage, root, report string) (repoTask, []string, map[string][32]byte) {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(pilot, "manifest.json"))
@@ -121,47 +215,8 @@ func prepareRepo(t *testing.T, pilot, stage, root, report string) (repoTask, []s
 	if err != nil {
 		t.Fatal(err)
 	}
-	files, err := repoSnapshot(source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for rel := range files {
-		data, err := os.ReadFile(filepath.Join(source, rel))
-		if err != nil {
-			t.Fatal(err)
-		}
-		dest := filepath.Join(root, rel)
-		if err := os.MkdirAll(filepath.Dir(dest), 0700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(dest, data, 0600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	// Reuse installed dependencies; never install while the model is resident.
-	if info, err := os.Stat(filepath.Join(source, "node_modules")); err != nil || !info.IsDir() {
-		t.Fatal("prepared dependencies missing")
-	}
-	if err := os.Symlink(filepath.Join(source, "node_modules"), filepath.Join(root, "node_modules")); err != nil {
-		t.Fatal(err)
-	}
-	for rel, oracle := range task.Tests {
-		if !filepath.IsLocal(rel) {
-			t.Fatal("oracle path escapes fixture")
-		}
-		if err := os.WriteFile(filepath.Join(root, rel), []byte(oracle), 0600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	var command []string
-	if len(task.TestCommand) > 0 {
-		command = make([]string, len(task.TestCommand))
-		for i, arg := range task.TestCommand {
-			command[i] = strings.ReplaceAll(arg, "{{REPORT}}", report)
-		}
-	} else {
-		command = legacyCommand(stage, report)
-	}
+	copyPreparedRepo(t, source, root)
+	command := taskCommand(task, stage, report)
 	before, err := repoSnapshot(root)
 	if err != nil {
 		t.Fatal(err)
@@ -237,12 +292,17 @@ func checkRepoReport(path string, task repoTask, fixed bool) error {
 	// cjs, ...), so the same logical test executes several times per run. Rather than treat a
 	// repeat as ambiguous, require every occurrence of a tracked name to agree on status — that
 	// still catches genuine flakiness (one project passing, another failing) as a hard error.
+	testCommand := task.TestCommand
 	tracked := map[string]bool{}
 	for _, name := range task.Pass {
-		tracked[strings.TrimSpace(name)] = true
+		for _, variant := range repoTestNameVariants(name, testCommand) {
+			tracked[variant] = true
+		}
 	}
 	for _, name := range task.Fail {
-		tracked[strings.TrimSpace(name)] = true
+		for _, variant := range repoTestNameVariants(name, testCommand) {
+			tracked[variant] = true
+		}
 	}
 	actual := map[string][]string{}
 	for _, suite := range report.TestResults {
@@ -255,7 +315,10 @@ func checkRepoReport(path string, task repoTask, fixed bool) error {
 		}
 	}
 	agrees := func(name, want string) bool {
-		statuses := actual[strings.TrimSpace(name)]
+		var statuses []string
+		for _, variant := range repoTestNameVariants(name, testCommand) {
+			statuses = append(statuses, actual[variant]...)
+		}
 		if len(statuses) == 0 {
 			return false
 		}
@@ -304,25 +367,56 @@ func checkRepoChanges(task repoTask, stage string, before, after map[string][32]
 	return nil
 }
 
+func selectedPilotStages(t *testing.T, pilot string) []string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(pilot, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest struct {
+		Tasks map[string]repoTask `json:"tasks"`
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if raw := strings.TrimSpace(os.Getenv("ANVIL_BASELINE_TASKS")); raw != "" {
+		stages := strings.Split(raw, ",")
+		for i := range stages {
+			stages[i] = strings.TrimSpace(stages[i])
+			if _, ok := manifest.Tasks[stages[i]]; !ok || stages[i] == "" {
+				t.Fatalf("ANVIL_BASELINE_TASKS names unknown pilot task %q", stages[i])
+			}
+		}
+		return stages
+	}
+	stages := make([]string, 0, len(manifest.Tasks))
+	for stage := range manifest.Tasks {
+		stages = append(stages, stage)
+	}
+	sort.Strings(stages)
+	return stages
+}
+
 // Run before loading the model. This proves the prepared reports reproduce the original bugs.
 func TestPreparedRealRepoBaselines(t *testing.T) {
 	pilot := os.Getenv("ANVIL_PILOT")
 	if pilot == "" {
 		t.Skip("requires ANVIL_PILOT prepared pilot directory")
 	}
-	for _, stage := range []string{"date-fns-guided", "dayjs-guided"} {
+	for _, stage := range selectedPilotStages(t, pilot) {
 		t.Run(stage, func(t *testing.T) {
-			root := t.TempDir()
+			modelRoot := t.TempDir()
 			report := filepath.Join(t.TempDir(), "baseline.json")
-			task, command, before := prepareRepo(t, pilot, stage, root, report)
-			result, err := runCommand(context.Background(), root, command, 30*time.Second)
+			task, _, _ := prepareRepo(t, pilot, stage, modelRoot, report)
+			verificationRoot, command, before := prepareVerificationRepo(t, modelRoot, task, stage, report)
+			result, err := runCommand(context.Background(), verificationRoot, command, 30*time.Second)
 			if err != nil || result.TimedOut || result.ExitCode != 1 {
 				t.Fatalf("baseline: %+v %v", result, err)
 			}
 			if err := checkRepoReport(report, task, false); err != nil {
 				t.Fatalf("%v\n%s", err, result.Output)
 			}
-			after, err := repoSnapshot(root)
+			after, err := repoSnapshot(verificationRoot)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -336,6 +430,27 @@ func TestPreparedRealRepoBaselines(t *testing.T) {
 			}
 			t.Logf("reproduced %d failures; preserved %d passing tests", len(task.Fail), len(task.Pass))
 		})
+	}
+}
+
+func TestRepoReportNamePrefixes(t *testing.T) {
+	const prefix = "packages/example/tests/example.test.ts"
+	testCommand := []string{"node", "node_modules/vitest/vitest.mjs", "run", prefix, "--reporter=json"}
+	if got, want := repoTestNameVariants("bug", testCommand), []string{"bug", prefix + " bug"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("unprefixed variants = %#v, want %#v", got, want)
+	}
+	if got, want := repoTestNameVariants(prefix+" bug", testCommand), []string{prefix + " bug", "bug"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("prefixed variants = %#v, want %#v", got, want)
+	}
+
+	path := filepath.Join(t.TempDir(), "report.json")
+	report := fmt.Sprintf(`{"testResults":[{"assertionResults":[{"fullName":%q,"status":"failed"},{"fullName":%q,"status":"passed"}]}]}`, prefix+" bug", prefix+" stable")
+	if err := os.WriteFile(path, []byte(report), 0600); err != nil {
+		t.Fatal(err)
+	}
+	task := repoTask{Fail: []string{"bug"}, Pass: []string{"stable"}, TestCommand: testCommand}
+	if err := checkRepoReport(path, task, false); err != nil {
+		t.Fatalf("prefixed report was rejected: %v", err)
 	}
 }
 

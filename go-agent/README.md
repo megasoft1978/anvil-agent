@@ -57,6 +57,12 @@ default replaced the flag. The remaining CLI surface is: `--root`, `--endpoint`,
 `--prompt`/`--prompt-file`/`--task-file`, `--instructions`, `--output`, `--timeout`, `--model`,
 `--max-tokens`, `--tui`.
 
+The optimization runner can apply two per-experiment controls without exposing hidden grader
+information to the model. `retry_without_edit` permits one ordinary corrective user turn after a
+completed response that changed no files; `tool_schema_policy: "dynamic"` can temporarily remove
+read/search tools after a configured read-only window. Both are opt-in experiment factors and are
+kept separate from the stable baseline so their effect can be measured independently.
+
 After a timeout with confirmed edits, use `ANVIL_REPLAY_TRACE=/path/to/trace.jsonl` plus `ANVIL_PILOT`
 and `ANVIL_REPO_STAGE` with `go test -run '^TestReplayRealRepoOracle$' -v -count=1`. This replays only
 successful source edits whose before/after content and hashes match, then grades pristine tests in a
@@ -81,10 +87,11 @@ On text completion, `completed` means only that the model supplied a final reply
 that a repository test passed. For measured real-repo results, run the trusted verifier separately
 against pristine oracle tests; preserve guided and independent results as different conditions.
 
-Qwen3.6-35B-A3B emits well-formed native tool calls, so the leaked-markup recovery path
-(`<|tool_call>call:name{...}<tool_call|>` and the missing-`call:` variant) exists but is normally
-unused; it stays available in `recovery.go` for any model that leaks this specific format instead of
-a real `tool_calls` response.
+Qwen3.6-35B-A3B is expected to emit native tool calls, so the leaked-markup recovery paths are
+normally unused. The registry also has a strict Qwen XML recovery path for complete
+`<tool_call><function=...><parameter=...>` output when a server returns the model text instead of a
+`tool_calls` entry. It uses the declared argument schema, rejects narration and malformed/truncated
+calls, and records the recovery separately; benchmark capability gates still require native calls.
 Token-limit responses execute no tools. Three identical consecutive tool calls stop as `stalled`,
 with a corrective warning after the second identical call. A model emitting more than one tool call
 in a single turn has only the first executed; the rest are dropped and traced as
@@ -187,8 +194,8 @@ Traces persist in `live-results/` even though fixture directories are temporary.
 `ANVIL_ALLOW_PAGING=1` explicitly disables the paging abort while retaining measurements. Use only
 when accepting possible system slowdown; results with paging are not clean performance measurements.
 
-These smoke tests are not a real-repo benchmark. After they pass, use the prepared guided date-fns
-and dayjs tasks, then independent prompts, one run at a time. Pin the same server configuration,
+These smoke tests are not a real-repo benchmark. After they pass, use selected manifest tasks one
+at a time. Pin the same server configuration,
 sampling settings, instructions, verification command, and deadline across any comparison.
 
 ## Progressive real-repo checks (Go only)
@@ -197,22 +204,23 @@ Use the existing EXP-085 prepared pilot directory as `ANVIL_PILOT`. Before loadi
 that both original bugs still reproduce through the Go runner:
 
 ```sh
-ANVIL_PILOT=/path/to/prepared/pilot go test -run '^TestPreparedRealRepoBaselines$' -v -count=1
+ANVIL_PILOT=/path/to/prepared/pilot ANVIL_BASELINE_TASKS=immer-array-push-fix,zod-int-json-schema \
+  go test -run '^TestPreparedRealRepoBaselines$' -v -count=1
 ```
 
 Then, with a healthy server and enough RAM, run the two smoke stages followed by **one** real issue:
 
 ```sh
-ANVIL_LIVE=1 ANVIL_PILOT=/path/to/prepared/pilot ANVIL_REPO_STAGE=date-fns-guided \
+ANVIL_LIVE=1 ANVIL_PILOT=/path/to/prepared/pilot ANVIL_REPO_STAGE=immer-array-push-fix \
   go test -run '^TestLiveModel$' -v -count=1 -timeout=8m
 ```
 
-Advance manually to `dayjs-guided`, then `date-fns-independent` and `dayjs-independent`, only after
-inspecting the preceding result. Each invocation starts with fresh disposable fixtures and stops on
-the first failed stage; it does not reuse a previous model patch. Real-repo preparation copies files
-without Git history, reuses preinstalled dependencies, and installs the manifest's pristine oracle
-tests. Only the issue report goes into the prompt; the host test runner executes verification after
-the model run.
+Advance manually to another selected manifest task only after inspecting the preceding result. Each
+invocation starts with fresh disposable fixtures and stops on the first failed stage; it does not
+reuse a previous model patch. Real-repo preparation copies files without Git history, reuses
+preinstalled dependencies, and keeps the manifest's pristine oracle tests in a separate verification
+worktree. Only the issue report goes into the prompt; the host test runner executes verification
+after the model run.
 The runner verifies each expected test by name, rejects missing/skipped tests and regressions, and
 rejects all file changes except the issue's designated source files. Jest coverage stays enabled but
 writes outside the worktree. This is a controlled regression experiment, not a hostile-code sandbox:

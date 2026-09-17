@@ -415,6 +415,46 @@ func TestTaskReminder(t *testing.T) {
 	}
 }
 
+func TestRetryWithoutEdit(t *testing.T) {
+	tools, trace := newTools(t)
+	if err := os.WriteFile(filepath.Join(tools.Root.Name(), "a"), []byte("wrong"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config()
+	cfg.RetryWithoutEdit = true
+	turn := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		turn++
+		var request Request
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+		}
+		switch turn {
+		case 1:
+			reply(w, Message{Content: "The bug is in a."}, "stop")
+		case 2:
+			if len(request.Messages) < 4 || request.Messages[len(request.Messages)-1].Role != "user" || !strings.Contains(request.Messages[len(request.Messages)-1].Content, "no source file has been changed") {
+				t.Errorf("missing no-edit retry prompt: %+v", request.Messages)
+			}
+			reply(w, Message{ToolCalls: []ToolCall{call("edit", `{"path":"a","oldText":"wrong","newText":"right"}`)}}, "tool_calls")
+		default:
+			reply(w, Message{Content: "Fixed."}, "stop")
+		}
+	}))
+	defer server.Close()
+	result := runAgent(context.Background(), cfg, "Fix a", &Client{URL: server.URL, HTTP: server.Client()}, tools, &Trace{Writer: trace})
+	if result.Status != "completed" || result.ToolCalls != 1 || len(result.EditedFiles) != 1 {
+		t.Fatalf("got %+v", result)
+	}
+	content, _ := os.ReadFile(filepath.Join(tools.Root.Name(), "a"))
+	if string(content) != "right" {
+		t.Fatalf("content %s", content)
+	}
+	if !strings.Contains(trace.String(), `"type":"no_edit_retry"`) {
+		t.Fatal("no-edit retry not traced")
+	}
+}
+
 func TestEditOnlyDiagnostic(t *testing.T) {
 	tools, trace := newTools(t)
 	tools.ReadDisabled = true
