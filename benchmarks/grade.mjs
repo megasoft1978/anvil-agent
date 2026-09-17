@@ -11,8 +11,9 @@
 //   1. Pattern rules (`all`/`any`/`forbid`, or legacy single `pass`) scoped to a named file or file list.
 //   2. Executable-oracle bugs (`"oracle": true`) -- graded by actually running the code, see runOracle().
 
-import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, cpSync, readdirSync, lstatSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import path from "node:path";
 
 // Python's original used `\Z` (absolute end-of-string) for the "unterminated fence" fallback. JS has no
@@ -197,10 +198,109 @@ function runOracle(scenarioId, oracleRoot, workDir) {
     const out = execFileSync("node", ["--experimental-strip-types", "test/run.mjs"], {
       cwd: workDir, encoding: "utf8", timeout: 60_000, stdio: ["ignore", "pipe", "pipe"],
     });
-    return { ok: true, output: out };
+    return { ok: true, output: out, exitCode: 0 };
   } catch (e) {
     const output = `${e.stdout || ""}${e.stderr || ""}`;
-    return { ok: false, output };
+    return { ok: false, output, exitCode: typeof e.status === "number" ? e.status : null };
+  }
+}
+
+function oracleVerdict(scenario, oracleRoot, workDir, scratchDir, successMarker = null) {
+  const oracleKeys = new Set(scenario.bugs.filter((b) => b.oracle).map((b) => b.key));
+  const { ok, output, exitCode } = runOracle(scenario.id, oracleRoot, workDir);
+  const failedKeys = new Set();
+  const failReasons = new Map();
+  for (const line of output.split("\n")) {
+    if (!line.startsWith("FAIL ")) continue;
+    const rest = line.slice(5);
+    const key = rest.split(":")[0].split(" ")[0].trim();
+    const colon = rest.indexOf(":");
+    if (oracleKeys.has(key)) {
+      failedKeys.add(key);
+      if (colon !== -1) failReasons.set(key, rest.slice(colon + 1).trim());
+    }
+  }
+  if (!ok) {
+    // A non-zero exit after one reported failure is still an incomplete oracle run. Mark every
+    // expected key failed so an early crash cannot silently pass the checks it never reached.
+    for (const key of oracleKeys) {
+      failedKeys.add(key);
+      if (!failReasons.has(key)) failReasons.set(key, "oracle exited before a complete result set");
+    }
+  } else if (successMarker && !output.includes(successMarker)) {
+    // An empty or unstructured zero exit is not evidence that the expected checks ran.
+    for (const key of oracleKeys) {
+      failedKeys.add(key);
+      failReasons.set(key, `oracle success marker missing: ${successMarker}`);
+    }
+  }
+  return {
+    ok: ok && failedKeys.size === 0,
+    exitCode,
+    output,
+    allExpectedChecksObserved: ok ? Boolean(!successMarker || output.includes(successMarker)) : false,
+    results: [...oracleKeys].map((key) => ({ key, pass: !failedKeys.has(key), reason: failedKeys.has(key) ? failReasons.get(key) ?? null : null })),
+  };
+}
+
+function collectDirectoryFiles(root, relative = "", files = {}) {
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (entry.name === ".git" || entry.name === "node_modules") continue;
+    const rel = relative ? `${relative}/${entry.name}` : entry.name;
+    const full = path.join(root, entry.name);
+    if (entry.isDirectory()) collectDirectoryFiles(full, rel, files);
+    else if (entry.isFile()) files[rel.replaceAll(path.sep, "/")] = readFileSync(full, "utf8");
+  }
+  return files;
+}
+
+function adaptDirectoryImports(root) {
+  const before = collectDirectoryFiles(root);
+  const adaptations = [];
+  for (const [rel, source] of Object.entries(before)) {
+    if (!/\.tsx?$/.test(rel)) continue;
+    const adapted = fixTsImports(source);
+    if (adapted === source) continue;
+    writeFileSync(path.join(root, rel), adapted);
+    adaptations.push({ path: rel, before_sha256: createHash("sha256").update(source).digest("hex"), after_sha256: createHash("sha256").update(adapted).digest("hex") });
+  }
+  return adaptations;
+}
+
+/** Grade the actual files left by the Go CLI. The model's final answer is not an input. */
+export function gradeDirectory(scenario, workDir, oracleRoot, scratchDir, options = {}) {
+  const oracleKeys = new Set(scenario.bugs.filter((b) => b.oracle).map((b) => b.key));
+  if (options.expectedOracleKeys && (oracleKeys.size !== options.expectedOracleKeys.length || options.expectedOracleKeys.some((key) => !oracleKeys.has(key)))) {
+    throw new Error("scenario oracle keys differ from the frozen contract");
+  }
+  const work = path.join(scratchDir, `directory_${scenario.id}_${process.pid}_${Date.now()}`);
+  let oracle = null;
+  let adaptations = [];
+  try {
+    rmSync(work, { recursive: true, force: true });
+    cpSync(workDir, work, { recursive: true, dereference: false, force: true });
+    adaptations = adaptDirectoryImports(work);
+    if (oracleKeys.size > 0) {
+      oracle = oracleVerdict(scenario, oracleRoot, work, scratchDir, options.successMarker ?? null);
+    }
+    const files = collectDirectoryFiles(work);
+    const raw = Object.entries(files).map(([file, body]) => `== ${file} ==\n${body}`).join("\n");
+    const patternResults = scenario.bugs.filter((bug) => !bug.oracle).map((bug) => {
+      const { pass, reason } = evalBug(bug, raw, files);
+      return { key: bug.key, label: bug.label, pass, reason: pass ? null : reason };
+    });
+    const oracleResults = oracle?.results ?? [];
+    const results = [...oracleResults, ...patternResults];
+    return {
+      scenario: scenario.id,
+      pass: results.every((result) => result.pass),
+      allPassed: results.every((result) => result.pass),
+      results,
+      oracle: oracle ? { ok: oracle.ok, exit_code: oracle.exitCode, all_expected_checks_observed: oracle.allExpectedChecksObserved, output: oracle.output } : null,
+      import_adaptations: adaptations,
+    };
+  } finally {
+    rmSync(work, { recursive: true, force: true });
   }
 }
 
@@ -228,11 +328,14 @@ export function grade(scenario, rawOutput, oracleRoot, scratchDir) {
           if (colon !== -1) failReasons.set(key, rest.slice(colon + 1).trim());
         }
       }
-      if (!ok && failedKeys.size === 0) {
-        // crash: fail closed, not open -- a real bug this exact port fixed once already (see runOracle's docstring)
-        failedKeys = new Set(oracleKeys);
+      if (!ok) {
+        // Any non-zero exit is incomplete, even when one or more FAIL lines were printed. A
+        // crash after the first assertion must not silently pass the assertions it never reached.
         const firstLine = output.split("\n").find((l) => l.trim()) || "no output";
-        for (const k of oracleKeys) failReasons.set(k, `oracle crashed: ${firstLine.trim()}`);
+        for (const k of oracleKeys) {
+          failedKeys.add(k);
+          if (!failReasons.has(k)) failReasons.set(k, `oracle exited before a complete result set: ${firstLine.trim()}`);
+        }
       }
     } finally {
       rmSync(work, { recursive: true, force: true });
