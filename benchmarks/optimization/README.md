@@ -79,13 +79,16 @@ sh benchmarks/optimization/run-gemma4-first-batch.sh "$SESSION"
 The wrapper no longer requires a conversational approval flag. Preparation does not load the model,
 start a server, or verify fixtures. The legacy `--approved` spelling remains accepted for old scripts.
 
-This host's normal working condition is ~6-7 GiB free with ordinary applications open, not a rebooted,
-app-free machine, and ambient system memory pressure from those applications is not itself a
-contamination signal -- a run does not require closing other apps or a reboot. What the memory guard
-gates on is the model server's own dirty footprint (`footprint -p <pid>`, `server_footprint_bytes` in
-`memory.jsonl`), checked against `policy.max_server_footprint_bytes` (default 6 GiB, see
-`memory-gate.mjs`). The guard still stops on critical system-wide pressure, an unavailable pressure
-reading, or three successive one-second samples with increased swapouts, regardless of footprint.
+This host's normal working condition runs close to its swap ceiling with ordinary applications open,
+not a rebooted, app-free machine, and ambient system memory pressure from those applications is not
+itself a contamination signal -- a run does not require closing other apps or a reboot. Live
+vm_stat checks on 2026-09-17 measured reclaimable memory (free + speculative + inactive pages) at
+2.9 and 3.67 GiB minutes apart under kernel pressure level 2 (warning) both times. What the memory
+guard gates on is the model server's own dirty footprint (`footprint -p <pid>`, `server_footprint_bytes`
+in `memory.jsonl`), checked against `policy.max_server_footprint_bytes` (default 3 GiB, deliberately
+below that measured range; see `memory-gate.mjs`). The guard still stops on critical system-wide
+pressure, an unavailable pressure reading, or three successive one-second samples with increased
+swapouts, regardless of footprint.
 
 To fetch the next smaller candidate after the local Gemma probe, use the isolated downloader after the read-only disk preflight.
 It resumes a partial tree, requires a model-size plus reserve-space check, records the exact revision,

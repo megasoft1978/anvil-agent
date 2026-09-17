@@ -35,13 +35,15 @@ import { parseFootprintText, evaluateFootprintGate } from "./memory-gate.mjs";
 
 // Default server-footprint ceiling. The prior gates assumed a rebooted,
 // app-free 16 GiB host and aborted on ambient "critical" system pressure --
-// but this host's actual normal condition is ~6-7 GiB free with ordinary
-// apps open, and that ambient pressure is not itself a contamination signal.
-// What matters is whether the model server's own dirty footprint fits.
-// 6 GiB is the working assumption (the conservative end of the stated
-// 6-7 GiB range); override per-experiment with
-// `policy.max_server_footprint_bytes`.
-const DEFAULT_MAX_SERVER_FOOTPRINT_BYTES = 6 * 1024 ** 3;
+// but this host's actual normal condition runs close to its swap ceiling,
+// and that ambient pressure is not itself a contamination signal. What
+// matters is whether the model server's own dirty footprint fits. Live
+// vm_stat checks on 2026-09-17 measured reclaimable memory (free +
+// speculative + inactive) at 2.9 and 3.67 GiB minutes apart under kernel
+// pressure level 2 (warning) both times; 3 GiB is the working default,
+// deliberately below the low end of that range. Override per-experiment
+// with `policy.max_server_footprint_bytes`.
+const DEFAULT_MAX_SERVER_FOOTPRINT_BYTES = 3 * 1024 ** 3;
 
 
 
