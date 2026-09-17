@@ -31,6 +31,17 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { cachedPromptTokens } from "./cache-metrics.mjs";
+import { parseFootprintText, evaluateFootprintGate } from "./memory-gate.mjs";
+
+// Default server-footprint ceiling. The prior gates assumed a rebooted,
+// app-free 16 GiB host and aborted on ambient "critical" system pressure --
+// but this host's actual normal condition is ~6-7 GiB free with ordinary
+// apps open, and that ambient pressure is not itself a contamination signal.
+// What matters is whether the model server's own dirty footprint fits.
+// 6 GiB is the working assumption (the conservative end of the stated
+// 6-7 GiB range); override per-experiment with
+// `policy.max_server_footprint_bytes`.
+const DEFAULT_MAX_SERVER_FOOTPRINT_BYTES = 6 * 1024 ** 3;
 
 
 
@@ -432,8 +443,9 @@ function pressureStatus(text) {
 }
 
 async function sampleMemory(serverPid, baselineCounters) {
-  const [ps, vm, swap, pressure, pressureLevel] = await Promise.all([
+  const [ps, footprint, vm, swap, pressure, pressureLevel] = await Promise.all([
     serverPid ? command(["ps", "-o", "rss=", "-p", String(serverPid)]) : Promise.resolve({ code: 1, stdout: "" }),
+    serverPid ? command(["footprint", "-p", String(serverPid)]) : Promise.resolve({ code: 1, stdout: "" }),
     command(["vm_stat"]),
     command(["sysctl", "-n", "vm.swapusage"]),
     command(["memory_pressure", "-Q"]),
@@ -448,7 +460,7 @@ async function sampleMemory(serverPid, baselineCounters) {
   const fallbackPressure = pressureStatus(pressure.stdout);
   const measurements = {
     server_rss_bytes: ps.code === 0 && parseNumber(ps.stdout) != null ? parseNumber(ps.stdout) * 1024 : null,
-    server_footprint_bytes: null,
+    server_footprint_bytes: footprint.code === 0 ? parseFootprintText(footprint.stdout, serverPid) : null,
     wired_bytes: parsedVM.wired_bytes,
     compressed_bytes: parsedVM.compressed_bytes,
     free_bytes: parsedVM.free_bytes,
@@ -467,7 +479,7 @@ async function sampleMemory(serverPid, baselineCounters) {
   };
   const missing = [];
   if (measurements.server_rss_bytes == null) missing.push("server_rss_bytes: ps did not return a live server RSS");
-  missing.push("server_footprint_bytes: unavailable from the node-only sampler");
+  if (measurements.server_footprint_bytes == null) missing.push("server_footprint_bytes: footprint did not return a parsable phys_footprint line");
   for (const field of ["wired_bytes", "compressed_bytes", "free_bytes", "cache_bytes", "pressure", "swap_used_bytes", "pageout_delta", "swapin_delta", "swapout_delta"]) {
     if (measurements[field] == null) missing.push(`${field}: platform command returned no value`);
   }
@@ -475,9 +487,10 @@ async function sampleMemory(serverPid, baselineCounters) {
 }
 
 class MemorySampler {
-  constructor(file, serverPid = null) {
+  constructor(file, serverPid = null, maxServerFootprintBytes = DEFAULT_MAX_SERVER_FOOTPRINT_BYTES) {
     this.file = file;
     this.serverPid = serverPid;
+    this.maxServerFootprintBytes = maxServerFootprintBytes;
     this.phase = "pre_run";
     this.running = false;
     this.timer = null;
@@ -526,6 +539,15 @@ class MemorySampler {
     this.previousSwapoutDelta = data.swapout_delta;
     if (data.pressure == null) this.unsafe ??= "memory pressure unavailable";
     if (data.pressure === "critical") this.unsafe ??= "critical memory pressure";
+    // Ambient system pressure from the user's own other apps is the expected,
+    // permanent condition on this host, not a contamination signal -- so it
+    // is only ever a hard stop at "critical". The gate that actually decides
+    // fitness is the server's own dirty footprint against the configured
+    // ceiling, once the server exists.
+    if (this.serverPid != null) {
+      const footprintGate = evaluateFootprintGate(data.server_footprint_bytes, this.maxServerFootprintBytes);
+      if (!footprintGate.pass) this.unsafe ??= footprintGate.reason;
+    }
     if (this.swapoutGrowth >= 3) this.unsafe ??= "swapout increased in three successive samples";
   }
 
@@ -1743,8 +1765,13 @@ async function runCapabilityGates(sessionDir, experiments, contract, cliPath, se
     if (recoveries > 0) { checkResult.pass = false; checkResult.reason = "native gate used recovered text calls"; }
     await memorySampler.sample();
     const samples = memorySampler.samples.filter((sample) => sample.attempt_id === id && sample.execution_id === id);
-    const memoryValid = !memorySampler.unsafe && samples.length > 0 && samples.every((sample) => sample.pressure === "normal");
-    if (!memoryValid) { checkResult.pass = false; checkResult.reason = "gate memory pressure unsafe or unknown"; }
+    // Ambient system pressure from the user's other apps is expected here, not
+    // a contamination signal -- so "warning" pressure throughout does not
+    // invalidate a gate by itself. `unsafe` already covers critical pressure,
+    // unavailable pressure, runaway swapout, and (once serverPid is set) the
+    // server-footprint ceiling.
+    const memoryValid = !memorySampler.unsafe && samples.length > 0;
+    if (!memoryValid) { checkResult.pass = false; checkResult.reason = `gate memory unsafe: ${memorySampler.unsafe ?? "no samples recorded"}`; }
     const row = { state: "finished", attempt_id: id, scored: false, gate: true, server_profile: serverProfile, server_fingerprint: gateFingerprint, status: result.summary?.status ?? "no_summary", cli_exit_code: result.process.code, cli_wall_ms: result.process.wallMs, tool_calls: result.summary?.tool_calls ?? null, recoveries, memory_valid: memoryValid, gate_pass: checkResult.pass, gate_check: checkResult, completed_at: new Date().toISOString() };
     appendJSONL(path.join(sessionDir, "runs.jsonl"), row);
     gates.push(row);
@@ -1908,7 +1935,10 @@ async function runAttempt(attempt, sessionDir, experiments, contract, cliPath, s
   await memorySampler?.sample();
   const memory = memorySampler?.peakSummary(attempt.attempt_id, executionId) ?? null;
   const attemptSamples = memorySampler?.samples.filter((sample) => sample.attempt_id === attempt.attempt_id && sample.execution_id === executionId) ?? [];
-  const memoryValid = attemptSamples.length > 0 && !memorySampler?.unsafe && attemptSamples.every((sample) => sample.pressure === "normal");
+  // See the gate check above: ambient pressure need not be "normal" throughout,
+  // only not-unsafe (which already covers critical pressure and the
+  // server-footprint ceiling).
+  const memoryValid = attemptSamples.length > 0 && !memorySampler?.unsafe;
   const verificationWallMs = Date.now() - verificationStartedAt;
   const summary = cliResult.summary;
   const recoveries = Number.isFinite(summary?.recoveries)
@@ -2060,11 +2090,19 @@ async function run(args) {
   }
   const pid = args["start-server"] || args["external-server"] ? externalPID : await discoverServerPid(experiments);
   let managedServer = null;
-  const memory = new MemorySampler(path.join(sessionDir, "memory.jsonl"), pid);
+  const maxServerFootprintBytes = experiments.policy?.max_server_footprint_bytes ?? DEFAULT_MAX_SERVER_FOOTPRINT_BYTES;
+  const memory = new MemorySampler(path.join(sessionDir, "memory.jsonl"), pid, maxServerFootprintBytes);
   await memory.start("pre_server");
   let runCount = 0;
   try {
-    if (memory.unsafe || memory.samples.at(-1)?.pressure !== "normal") die("idle memory baseline is unsafe or unknown; stop before server startup");
+    // Ambient pressure from the user's other running apps is this host's
+    // normal condition, not a contamination signal, so a pre-server baseline
+    // of "warning" is expected and does not block startup by itself. Only a
+    // hard-unsafe reading (critical pressure, unavailable pressure, or --
+    // once the server exists -- a footprint over the configured ceiling)
+    // stops the run before it starts. The pressure label is still recorded
+    // on every sample for later inspection.
+    if (memory.unsafe) die(`idle memory baseline is unsafe: ${memory.unsafe}`);
     if (args["start-server"]) {
       // Managed startup is explicit and never downloads a model. It is intentionally absent from
       // preparation commands so the operator can free memory before the batch begins.

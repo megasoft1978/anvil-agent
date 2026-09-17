@@ -76,9 +76,16 @@ SESSION=/Users/megasoft78/Desktop/Freelance/anvil-agent/.optimization-results/<t
 sh benchmarks/optimization/run-gemma4-first-batch.sh "$SESSION"
 ```
 
-The wrapper no longer requires a conversational approval flag. Reboot first, close other applications,
-and keep the memory preflight and runner stopping rules active. Preparation does not load the model,
+The wrapper no longer requires a conversational approval flag. Preparation does not load the model,
 start a server, or verify fixtures. The legacy `--approved` spelling remains accepted for old scripts.
+
+This host's normal working condition is ~6-7 GiB free with ordinary applications open, not a rebooted,
+app-free machine, and ambient system memory pressure from those applications is not itself a
+contamination signal -- a run does not require closing other apps or a reboot. What the memory guard
+gates on is the model server's own dirty footprint (`footprint -p <pid>`, `server_footprint_bytes` in
+`memory.jsonl`), checked against `policy.max_server_footprint_bytes` (default 6 GiB, see
+`memory-gate.mjs`). The guard still stops on critical system-wide pressure, an unavailable pressure
+reading, or three successive one-second samples with increased swapouts, regardless of footprint.
 
 To fetch the next smaller candidate after the local Gemma probe, use the isolated downloader after the read-only disk preflight.
 It resumes a partial tree, requires a model-size plus reserve-space check, records the exact revision,
@@ -139,9 +146,10 @@ node benchmarks/optimization/runner.mjs status --session "$SESSION"
 `LLAMA-IQ2-8K-REAL` is the first measurement unit. It contains one 180-second real repair attempt,
 an unscored warm smoke, and three unscored capability gates. Startup, fixture validation, and grading
 remain part of the elapsed time. The local GGUF is about 11.52 GB on disk; peak RSS, wired/compressed
-memory, swap, pressure, and pageout behavior are machine-state dependent and must be measured after
-memory is freed. The memory guard stops after critical pressure or three successive one-second
-samples with increased swapouts.
+memory, swap, pressure, and pageout behavior are machine-state dependent and must be measured with
+the host in its normal condition, not a freshly rebooted one. The memory guard stops after critical
+pressure, three successive one-second samples with increased swapouts, or the server's own dirty
+footprint exceeding `policy.max_server_footprint_bytes`.
 
 Scenario fixtures contain concise symptom reports rather than a literal imperative. The runner
 prepends a fixed repair instruction to every scored report so the model is asked to apply the
