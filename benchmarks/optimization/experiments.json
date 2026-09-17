@@ -1,0 +1,210 @@
+{
+  "schema_version": 1,
+  "model": {
+    "id": "qwen36-35b-a3b",
+    "thinking_id": "qwen36-35b-a3b-thinking",
+    "path": "/Users/megasoft78/.anvil-agent/models/Qwen3.6-35B-A3B-UD-IQ2_M.gguf",
+    "bytes": 11522702304,
+    "repo": "unsloth/Qwen3.6-35B-A3B-GGUF",
+    "file": "Qwen3.6-35B-A3B-UD-IQ2_M.gguf"
+  },
+  "server": {
+    "endpoint": "http://127.0.0.1:8114/v1",
+    "health_path": "/health",
+    "slots_path": "/slots",
+    "binary": "llama-server",
+    "version_expected": "b10809",
+    "commit_expected": "5266f24da",
+    "host": "127.0.0.1",
+    "port": 8114,
+    "common_flags": [
+      "-ngl", "99",
+      "-fa", "on",
+      "--no-warmup",
+      "-np", "1",
+      "--reasoning", "off",
+      "-ub", "256",
+      "-b", "256"
+    ],
+    "profiles": {
+      "baseline": {
+        "context": 24576,
+        "spec_type": "ngram-simple",
+        "spec_draft": null,
+        "kv": null
+      },
+      "no-speculation": {
+        "context": 24576,
+        "spec_type": "none",
+        "spec_draft": null,
+        "kv": null
+      },
+      "context-16384": {
+        "context": 16384,
+        "spec_type": "ngram-simple",
+        "spec_draft": null,
+        "kv": null
+      },
+      "batch-512-256": {
+        "context": 24576,
+        "spec_type": "ngram-simple",
+        "spec_draft": null,
+        "kv": null,
+        "ubatch": 256,
+        "batch": 512
+      },
+      "batch-512-512": {
+        "context": 24576,
+        "spec_type": "ngram-simple",
+        "spec_draft": null,
+        "kv": null,
+        "ubatch": 512,
+        "batch": 512
+      },
+      "thinking": {
+        "context": 24576,
+        "spec_type": "ngram-simple",
+        "spec_draft": null,
+        "kv": null,
+        "reasoning": "on"
+      }
+    },
+    "slot_cache_clear": {
+      "method": "POST",
+      "path": "/slots/0?action=erase",
+      "success_status": 200,
+      "fallback": "stop-and-resume-before-next-attempt"
+    },
+    "drain": {
+      "poll_ms": 1000,
+      "timeout_ms": 60000,
+      "unknown_endpoint": "stop-before-next-attempt"
+    }
+  },
+  "cli": {
+    "default_model": "qwen36-35b-a3b",
+    "main_timeout_seconds": 300,
+    "control_timeout_seconds": 120,
+    "max_turns": 16,
+    "max_tokens": 3072,
+    "read_output_limit": 32768,
+    "search_output_limit": 32768
+  },
+  "budgets": {
+    "product-default-control": {
+      "timeout_seconds": 120,
+      "max_turns": 16,
+      "max_tokens": 8192
+    },
+    "main-screen": {
+      "timeout_seconds": 300,
+      "max_turns": 16,
+      "max_tokens": 3072
+    }
+  },
+  "policy": {
+    "warm_weights": true,
+    "warm_task_scored": false,
+    "clear_prompt_cache_between_attempts": true,
+    "preserve_prefix_cache_within_task": true,
+    "one_server_one_attempt": true,
+    "counterbalance": true,
+    "verification_outside_model_worktree": true,
+    "fail_closed_oracle": true,
+    "pending_validation_is_not_pass": true
+  },
+  "experiments": [
+    {
+      "id": "E0-control",
+      "hypothesis": "The shipped product-default deadline is usable when measured through the real CLI.",
+      "budget": "product-default-control",
+      "server_profile": "baseline",
+      "tasks": ["permissions-cache"],
+      "seeds": [42],
+      "agent": {"min_p": null, "tool_schema_policy": "dynamic"},
+      "scored": false,
+      "gate": "record-only"
+    },
+    {
+      "id": "E0",
+      "hypothesis": "The current shipped CLI/server profile is the reproducible baseline for verified repair.",
+      "budget": "main-screen",
+      "server_profile": "baseline",
+      "tasks": ["permissions-cache", "job-queue", "immer-array-push-fix", "zod-int-json-schema"],
+      "seeds": [42, 31415],
+      "agent": {"min_p": null, "tool_schema_policy": "dynamic"},
+      "scored": true,
+      "gate": "baseline-quality-and-measurement"
+    },
+    {
+      "id": "E1",
+      "hypothesis": "Sending the Qwen-recommended explicit min_p=0 changes useful repair behavior relative to the omitted server default.",
+      "budget": "main-screen",
+      "server_profile": "baseline",
+      "tasks": ["permissions-cache", "job-queue", "immer-array-push-fix", "zod-int-json-schema"],
+      "seeds": [42, 31415],
+      "agent": {"min_p": 0, "tool_schema_policy": "dynamic"},
+      "scored": true,
+      "gate": "no-lost-verified-tasks-and-paired-efficiency"
+    },
+    {
+      "id": "E2",
+      "hypothesis": "Keeping the declared tool schema stable preserves more reusable prompt prefix while retaining correct tool behavior.",
+      "budget": "main-screen",
+      "server_profile": "baseline",
+      "tasks": ["permissions-cache", "job-queue", "immer-array-push-fix", "zod-int-json-schema"],
+      "seeds": [42, 31415],
+      "agent": {"min_p": null, "tool_schema_policy": "stable"},
+      "scored": true,
+      "gate": "behavior-plus-cache-evidence"
+    },
+    {
+      "id": "E3",
+      "hypothesis": "A 4 KiB read cap reduces prefill growth without causing exact-edit failures.",
+      "budget": "main-screen",
+      "server_profile": "baseline",
+      "tasks": ["permissions-cache", "job-queue", "immer-array-push-fix", "zod-int-json-schema"],
+      "seeds": [42, 31415],
+      "agent": {"min_p": null, "tool_schema_policy": "dynamic", "read_output_limit": 4096, "search_output_limit": 8192},
+      "scored": true,
+      "requires": "evidence-selected",
+      "gate": "extra-round-trips-and-exact-edit-quality"
+    },
+    {
+      "id": "E4-context",
+      "hypothesis": "Reducing context from 24576 to 16384 removes pressure while leaving safe completion headroom.",
+      "budget": "main-screen",
+      "server_profile": "context-16384",
+      "tasks": ["permissions-cache", "job-queue", "immer-array-push-fix", "zod-int-json-schema"],
+      "seeds": [42, 31415],
+      "agent": {"min_p": null, "tool_schema_policy": "dynamic"},
+      "scored": true,
+      "requires": "evidence-selected",
+      "gate": "long-tool-task-and-memory-pressure"
+    },
+    {
+      "id": "E5-batch",
+      "hypothesis": "Larger prompt-processing batch improves newly evaluated prompt time with acceptable inference memory.",
+      "budget": "main-screen",
+      "server_profile": "batch-512-256",
+      "tasks": ["permissions-cache", "job-queue", "immer-array-push-fix", "zod-int-json-schema"],
+      "seeds": [42, 31415],
+      "agent": {"min_p": null, "tool_schema_policy": "dynamic"},
+      "scored": true,
+      "requires": "evidence-selected",
+      "gate": "prompt-time-materiality-and-memory-headroom"
+    },
+    {
+      "id": "E6-speculation",
+      "hypothesis": "The current ngram-simple speculation helps both short tool calls and substantial edit/write arguments.",
+      "budget": "main-screen",
+      "server_profile": "no-speculation",
+      "tasks": ["permissions-cache", "job-queue", "immer-array-push-fix", "zod-int-json-schema"],
+      "seeds": [42, 31415],
+      "agent": {"min_p": null, "tool_schema_policy": "dynamic"},
+      "scored": true,
+      "requires": "evidence-selected",
+      "gate": "generation-share-and-accepted-token-evidence"
+    }
+  ]
+}

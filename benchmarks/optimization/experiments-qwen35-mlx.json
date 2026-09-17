@@ -1,0 +1,175 @@
+{
+  "schema_version": 1,
+  "backend": "mlx-lm",
+  "candidate": {
+    "id": "mlx-lm-qwen35-9b-4bit",
+    "engine": "MLX-LM",
+    "purpose": "smaller Apple-Silicon repair candidate after the Qwen3.6 resident fit stop"
+  },
+  "model": {
+    "id": "qwen35-9b-4bit-mlx",
+    "request_id": "qwen35-9b-mlx",
+    "path": "/Users/megasoft78/Desktop/Freelance/anvil-agent/.optimization-models/Qwen3.5-9B-MLX-4bit",
+    "bytes": null,
+    "published_bytes": 5980000000,
+    "repo": "mlx-community/Qwen3.5-9B-MLX-4bit",
+    "revision": "938d8919941c6e7efd3c7150eff7fe9d12afa631",
+    "format": "mlx-safetensors",
+    "quantization": "4-bit"
+  },
+  "server": {
+    "backend": "mlx-lm",
+    "endpoint": "http://127.0.0.1:8115/v1",
+    "health_path": "/health",
+    "models_path": "/v1/models",
+    "props_path": "/props",
+    "template_path": "/Users/megasoft78/Desktop/Freelance/anvil-agent/.optimization-models/Qwen3.5-9B-MLX-4bit/chat_template.jinja",
+    "binary": "/Library/Frameworks/Python.framework/Versions/3.12/bin/mlx_lm.server",
+    "runtime_package_paths": [
+      "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/mlx_lm",
+      "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/mlx"
+    ],
+    "version_probe": [
+      "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3",
+      "-c",
+      "from importlib.metadata import version; print(version('mlx-lm'))"
+    ],
+    "version_expected": "0.31.2",
+    "host": "127.0.0.1",
+    "port": 8115,
+    "process_pattern": "mlx_lm.server.*--port 8115",
+    "model_flag": "--model",
+    "common_flags": [
+      "--temp",
+      "0.7",
+      "--top-p",
+      "0.8",
+      "--top-k",
+      "20",
+      "--min-p",
+      "0",
+      "--max-tokens",
+      "3072",
+      "--decode-concurrency",
+      "1",
+      "--prompt-concurrency",
+      "1",
+      "--prefill-step-size",
+      "512",
+      "--prompt-cache-size",
+      "0",
+      "--chat-template-args",
+      "{\"enable_thinking\":false}"
+    ],
+    "profiles": {
+      "fit-8192": {
+        "context_label": "8K benchmark budget; MLX-LM 0.31.2 has no hard context-size CLI flag",
+        "flags": []
+      }
+    },
+    "slot_cache_clear": {
+      "mode": "not_applicable",
+      "explanation": "MLX-LM exposes no llama.cpp /slots erase endpoint; prompt-cache-size=0 disables cross-attempt prompt caching and one managed server is used at a time"
+    },
+    "drain": {
+      "mode": "not_applicable",
+      "poll_ms": 1000,
+      "timeout_ms": 60000,
+      "explanation": "MLX-LM exposes no /slots idle endpoint; requests are serialized by prompt/decode concurrency 1"
+    }
+  },
+  "cli": {
+    "default_model": "qwen35-9b-mlx",
+    "main_timeout_seconds": 300,
+    "control_timeout_seconds": 120,
+    "max_turns": 16,
+    "max_tokens": 3072,
+    "read_output_limit": 32768,
+    "search_output_limit": 32768,
+    "warmup_timeout_seconds": 180,
+    "warmup_max_tokens": 1024,
+    "gate_timeout_seconds": 180,
+    "gate_max_tokens": 1024,
+    "warmup_agent": {
+      "tool_schema_policy": "stable",
+      "close_out_reserve": false
+    },
+    "gate_agent": {
+      "tool_schema_policy": "stable",
+      "close_out_reserve": false
+    }
+  },
+  "budgets": {
+    "fit-probe": {
+      "timeout_seconds": 180,
+      "max_turns": 16,
+      "max_tokens": 2048
+    },
+    "main-screen": {
+      "timeout_seconds": 300,
+      "max_turns": 16,
+      "max_tokens": 3072
+    }
+  },
+  "policy": {
+    "warm_weights": true,
+    "warm_task_scored": false,
+    "clear_prompt_cache_between_attempts": true,
+    "preserve_prefix_cache_within_task": false,
+    "one_server_one_attempt": true,
+    "counterbalance": true,
+    "verification_outside_model_worktree": true,
+    "fail_closed_oracle": true,
+    "pending_validation_is_not_pass": true,
+    "backend_note": "MLX-LM is an Apple-Silicon comparison backend. The first arm disables its prompt cache, serializes requests, records the local model tree hash, and tests native OpenAI tool calls before any screen. The fit-8192 label is a benchmark budget, not a server-enforced context cap."
+  },
+  "experiments": [
+    {
+      "id": "MLX-QWEN35-9B-8K-REAL",
+      "hypothesis": "A 9B 4-bit MLX model leaves enough unified-memory headroom to complete native Go CLI tool gates and one verified real-repository repair on the M1.",
+      "budget": "fit-probe",
+      "server_profile": "fit-8192",
+      "tasks": [
+        "immer-array-push-fix"
+      ],
+      "seeds": [
+        42
+      ],
+      "agent": {
+        "tool_schema_policy": "stable",
+        "close_out_reserve": false
+      },
+      "scored": true,
+      "gate": "native-tool-and-verified-repair-fit-probe"
+    },
+    {
+      "id": "MLX-QWEN35-9B-SCREEN",
+      "hypothesis": "After a normal-pressure verified repair, the same MLX profile can solve additional real repository tasks with native tool calls and useful end-to-end latency.",
+      "budget": "main-screen",
+      "server_profile": "fit-8192",
+      "tasks": [
+        "permissions-cache",
+        "job-queue",
+        "immer-array-push-fix",
+        "zod-int-json-schema"
+      ],
+      "seeds": [
+        42,
+        31415
+      ],
+      "agent": {
+        "tool_schema_policy": "stable",
+        "close_out_reserve": false
+      },
+      "scored": true,
+      "requires": "evidence-selected",
+      "gate": "native-tool-and-verified-repair-screen",
+      "depends_on": [
+        {
+          "experiment_id": "MLX-QWEN35-9B-8K-REAL",
+          "condition": "verified_repair_no_pressure"
+        }
+      ]
+    }
+  ]
+}

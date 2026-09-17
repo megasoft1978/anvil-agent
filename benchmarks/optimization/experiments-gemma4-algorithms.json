@@ -1,0 +1,394 @@
+{
+  "schema_version": 1,
+  "backend": "llama",
+  "candidate": {
+    "id": "llama.cpp-gemma4-26b-a4b-ud-iq2-m-attnq4k",
+    "engine": "llama.cpp",
+    "purpose": "Selective algorithm comparisons after a normal-pressure Gemma fit and complete baseline screen; never launch the whole matrix automatically"
+  },
+  "model": {
+    "id": "gemma4-26b-a4b-it-ud-iq2-m-attnq4k",
+    "request_id": "gemma4-26b-a4b-it-ud-iq2-m-attnq4k",
+    "path": "/Users/megasoft78/Desktop/Freelance/llm-memory-wall-research/models/gguf/gemma4-26b-a4b/gemma-4-26B-A4B-it-UD-IQ2_M-attnQ4K.gguf",
+    "bytes": 9777197536,
+    "sha256": "ab988c21bd0c45a7710263e45ae74007e2c15161201a0739e6e6c7e934ff8bfd",
+    "repo": "megasoft78/gemma-4-26B-A4B-it-attnQ4K-GGUF",
+    "revision": "a8410abe68cad702d459c72672d9d318570b00d8",
+    "file": "gemma-4-26B-A4B-it-UD-IQ2_M-attnQ4K.gguf",
+    "format": "gguf",
+    "quantization": "UD-IQ2_M with attention/embed Q4_K requant"
+  },
+  "server": {
+    "backend": "llama",
+    "endpoint": "http://127.0.0.1:8116/v1",
+    "health_path": "/health",
+    "models_path": "/v1/models",
+    "props_path": "/props",
+    "binary": "/opt/homebrew/bin/llama-server",
+    "version_expected": "b10809",
+    "commit_expected": "5266f24da",
+    "host": "127.0.0.1",
+    "port": 8116,
+    "process_pattern": "llama-server.*--port 8116",
+    "common_flags": [
+      "-ngl",
+      "99",
+      "-fa",
+      "on",
+      "--no-warmup",
+      "-np",
+      "1",
+      "--reasoning",
+      "off",
+      "--jinja",
+      "--offline",
+      "-ub",
+      "256",
+      "-b",
+      "256",
+      "--ctx-checkpoints",
+      "0",
+      "--cache-ram",
+      "0",
+      "--slot-save-path",
+      "/Users/megasoft78/.anvil-agent/slots/gemma4-26b"
+    ],
+    "profiles": {
+      "fit-8192": {
+        "context": 8192,
+        "spec_type": "none"
+      },
+      "algo-ngram-simple": {
+        "context": 8192,
+        "spec_type": "ngram-simple"
+      },
+      "algo-kv-q8": {
+        "context": 8192,
+        "spec_type": "none",
+        "kv": "q8_0"
+      }
+    },
+    "slot_cache_clear": {
+      "method": "POST",
+      "path": "/slots/0?action=erase",
+      "success_status": 200,
+      "fallback": "stop-and-resume-before-next-attempt"
+    },
+    "drain": {
+      "poll_ms": 1000,
+      "timeout_ms": 60000,
+      "unknown_endpoint": "stop-before-next-attempt"
+    },
+    "slots_path": "/slots"
+  },
+  "cli": {
+    "default_model": "gemma4-26b-a4b-it-ud-iq2-m-attnq4k",
+    "main_timeout_seconds": 300,
+    "control_timeout_seconds": 120,
+    "max_turns": 16,
+    "max_tokens": 3072,
+    "read_output_limit": 32768,
+    "search_output_limit": 32768,
+    "warmup_timeout_seconds": 180,
+    "warmup_max_tokens": 1024,
+    "gate_timeout_seconds": 180,
+    "gate_max_tokens": 1024,
+    "warmup_agent": {
+      "tool_schema_policy": "stable",
+      "close_out_reserve": false
+    },
+    "gate_agent": {
+      "tool_schema_policy": "stable",
+      "close_out_reserve": false
+    }
+  },
+  "budgets": {
+    "fit-probe": {
+      "timeout_seconds": 180,
+      "max_turns": 16,
+      "max_tokens": 2048
+    },
+    "main-screen": {
+      "timeout_seconds": 300,
+      "max_turns": 16,
+      "max_tokens": 3072
+    }
+  },
+  "policy": {
+    "warm_weights": true,
+    "warm_task_scored": false,
+    "clear_prompt_cache_between_attempts": true,
+    "preserve_prefix_cache_within_task": true,
+    "one_server_one_attempt": true,
+    "counterbalance": true,
+    "verification_outside_model_worktree": true,
+    "fail_closed_oracle": true,
+    "pending_validation_is_not_pass": true,
+    "backend_note": "This is a local file with prior llama.cpp evidence from a different agent. The current Go CLI must independently pass native tool gates and a verified real-repository repair. Checkpoint and RAM prompt cache are disabled based on the prior Gemma study; no speculation is enabled in the fit probe.",
+    "selection_note": "One evidence-selected arm per invocation, not an automatic grid. Shared-pool speculation, learned drafting and custom algorithms are tracked in research-agenda.json until their prerequisites are implemented. All arms retain native gates and holdout policy. No model download is authorized by this configuration."
+  },
+  "experiments": [
+    {
+      "id": "GEMMA4-LOCAL-8K-REAL",
+      "hypothesis": "The available Gemma 4 attnQ4K GGUF can fit with normal pressure and complete native Go CLI tool gates plus one verified real-repository repair.",
+      "budget": "fit-probe",
+      "server_profile": "fit-8192",
+      "tasks": [
+        "immer-array-push-fix"
+      ],
+      "seeds": [
+        42
+      ],
+      "agent": {
+        "tool_schema_policy": "stable",
+        "close_out_reserve": false
+      },
+      "scored": true,
+      "gate": "native-tool-and-verified-repair-fit-probe"
+    },
+    {
+      "id": "GEMMA4-LOCAL-SCREEN",
+      "hypothesis": "After a normal-pressure verified repair, the same low-residency Gemma profile can solve additional real repository tasks with native tool calls.",
+      "budget": "main-screen",
+      "server_profile": "fit-8192",
+      "tasks": [
+        "permissions-cache",
+        "job-queue",
+        "immer-array-push-fix",
+        "zod-int-json-schema"
+      ],
+      "seeds": [
+        42,
+        31415
+      ],
+      "agent": {
+        "tool_schema_policy": "stable",
+        "close_out_reserve": false
+      },
+      "scored": true,
+      "requires": "evidence-selected",
+      "gate": "native-tool-and-verified-repair-screen",
+      "depends_on": [
+        {
+          "experiment_id": "GEMMA4-LOCAL-8K-REAL",
+          "condition": "verified_repair_no_pressure"
+        }
+      ]
+    },
+    {
+      "id": "GEMMA4-ALGO-NGRAM-SIMPLE-SCREEN",
+      "hypothesis": "Model-free prompt lookup reduces end-to-end repair time on copied code; target verification and native tool gates must still pass.",
+      "budget": "main-screen",
+      "server_profile": "algo-ngram-simple",
+      "tasks": [
+        "permissions-cache",
+        "job-queue",
+        "immer-array-push-fix",
+        "zod-int-json-schema"
+      ],
+      "seeds": [
+        42,
+        31415
+      ],
+      "agent": {
+        "tool_schema_policy": "stable",
+        "close_out_reserve": false
+      },
+      "scored": true,
+      "requires": "evidence-selected",
+      "gate": "paired-quality-memory-and-total-time",
+      "depends_on": [
+        {
+          "experiment_id": "GEMMA4-LOCAL-SCREEN",
+          "condition": "verified_repair_no_pressure",
+          "complete": true
+        }
+      ]
+    },
+    {
+      "id": "GEMMA4-ALGO-KV-Q8-SCREEN",
+      "hypothesis": "Q8 key/value cache reduces measured memory without losing verified repairs; it changes numerical precision and is not an exactness claim.",
+      "budget": "main-screen",
+      "server_profile": "algo-kv-q8",
+      "tasks": [
+        "permissions-cache",
+        "job-queue",
+        "immer-array-push-fix",
+        "zod-int-json-schema"
+      ],
+      "seeds": [
+        42,
+        31415
+      ],
+      "agent": {
+        "tool_schema_policy": "stable",
+        "close_out_reserve": false
+      },
+      "scored": true,
+      "requires": "evidence-selected",
+      "gate": "paired-quality-memory-and-total-time",
+      "depends_on": [
+        {
+          "experiment_id": "GEMMA4-LOCAL-SCREEN",
+          "condition": "verified_repair_no_pressure",
+          "complete": true
+        }
+      ]
+    },
+    {
+      "id": "GEMMA4-ALGO-READ-8K-SCREEN",
+      "hypothesis": "Bounding each read result to 8 KiB reduces prompt work without losing required source evidence.",
+      "budget": "main-screen",
+      "server_profile": "fit-8192",
+      "tasks": [
+        "permissions-cache",
+        "job-queue",
+        "immer-array-push-fix",
+        "zod-int-json-schema"
+      ],
+      "seeds": [
+        42,
+        31415
+      ],
+      "agent": {
+        "tool_schema_policy": "stable",
+        "close_out_reserve": false,
+        "read_output_limit": 8192
+      },
+      "scored": true,
+      "requires": "evidence-selected",
+      "gate": "paired-quality-memory-and-total-time",
+      "depends_on": [
+        {
+          "experiment_id": "GEMMA4-LOCAL-SCREEN",
+          "condition": "verified_repair_no_pressure",
+          "complete": true
+        }
+      ]
+    },
+    {
+      "id": "GEMMA4-ALGO-SEARCH-8K-SCREEN",
+      "hypothesis": "Bounding each search result to 8 KiB reduces prompt work without losing verified repairs.",
+      "budget": "main-screen",
+      "server_profile": "fit-8192",
+      "tasks": [
+        "permissions-cache",
+        "job-queue",
+        "immer-array-push-fix",
+        "zod-int-json-schema"
+      ],
+      "seeds": [
+        42,
+        31415
+      ],
+      "agent": {
+        "tool_schema_policy": "stable",
+        "close_out_reserve": false,
+        "search_output_limit": 8192
+      },
+      "scored": true,
+      "requires": "evidence-selected",
+      "gate": "paired-quality-memory-and-total-time",
+      "depends_on": [
+        {
+          "experiment_id": "GEMMA4-LOCAL-SCREEN",
+          "condition": "verified_repair_no_pressure",
+          "complete": true
+        }
+      ]
+    },
+    {
+      "id": "GEMMA4-ALGO-FOCUSED-SCREEN",
+      "hypothesis": "The existing focused prompt improves verified repairs at unchanged model, tools and budgets.",
+      "budget": "main-screen",
+      "server_profile": "fit-8192",
+      "tasks": [
+        "permissions-cache",
+        "job-queue",
+        "immer-array-push-fix",
+        "zod-int-json-schema"
+      ],
+      "seeds": [
+        42,
+        31415
+      ],
+      "agent": {
+        "tool_schema_policy": "stable",
+        "close_out_reserve": false,
+        "prompt_profile": "focused"
+      },
+      "scored": true,
+      "requires": "evidence-selected",
+      "gate": "paired-quality-memory-and-total-time",
+      "depends_on": [
+        {
+          "experiment_id": "GEMMA4-LOCAL-SCREEN",
+          "condition": "verified_repair_no_pressure",
+          "complete": true
+        }
+      ]
+    },
+    {
+      "id": "GEMMA4-ALGO-DYNAMIC-SCREEN",
+      "hypothesis": "The existing dynamic schema policy improves repairs; close-out remains disabled. This includes persistent edit-only windows and repeated-call bans.",
+      "budget": "main-screen",
+      "server_profile": "fit-8192",
+      "tasks": [
+        "permissions-cache",
+        "job-queue",
+        "immer-array-push-fix",
+        "zod-int-json-schema"
+      ],
+      "seeds": [
+        42,
+        31415
+      ],
+      "agent": {
+        "tool_schema_policy": "dynamic",
+        "close_out_reserve": false,
+        "force_edit_after_reads": 5
+      },
+      "scored": true,
+      "requires": "evidence-selected",
+      "gate": "paired-quality-memory-and-total-time",
+      "depends_on": [
+        {
+          "experiment_id": "GEMMA4-LOCAL-SCREEN",
+          "condition": "verified_repair_no_pressure",
+          "complete": true
+        }
+      ]
+    },
+    {
+      "id": "GEMMA4-ALGO-NO-EDIT-RETRY-SCREEN",
+      "hypothesis": "One existing oracle-free no-edit retry improves verified repairs within the same deadline and token/turn budgets.",
+      "budget": "main-screen",
+      "server_profile": "fit-8192",
+      "tasks": [
+        "permissions-cache",
+        "job-queue",
+        "immer-array-push-fix",
+        "zod-int-json-schema"
+      ],
+      "seeds": [
+        42,
+        31415
+      ],
+      "agent": {
+        "tool_schema_policy": "stable",
+        "close_out_reserve": false,
+        "retry_without_edit": true
+      },
+      "scored": true,
+      "requires": "evidence-selected",
+      "gate": "paired-quality-memory-and-total-time",
+      "depends_on": [
+        {
+          "experiment_id": "GEMMA4-LOCAL-SCREEN",
+          "condition": "verified_repair_no_pressure",
+          "complete": true
+        }
+      ]
+    }
+  ]
+}

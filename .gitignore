@@ -1,2 +1,5 @@
 .DS_Store
 pilot/
+.optimization-results/
+.optimization-models/
+go-agent/holdouts/

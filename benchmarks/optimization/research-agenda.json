@@ -1,0 +1,282 @@
+{
+  "schema_version": 1,
+  "execution_policy": "Research inventory only; not accepted by runner as an experiment config. No downloads, training, model loads or automatic candidate sweeps. Promote one selected entry to a pinned executable config after prerequisites are satisfied.",
+  "candidates": [
+    {
+      "id": "PREFIX-REUSE",
+      "family": "conversation-cache",
+      "priority": 1,
+      "requires": [
+        "memory-valid MLX repair baseline and screen",
+        "supported task-boundary cache clear or matched per-attempt server restarts",
+        "byte-bounded retained cache and hybrid-state compatibility"
+      ],
+      "comparison": "Cache disabled versus task-scoped bounded cache, same restart boundaries and stable schema.",
+      "metrics": [
+        "cached_tokens",
+        "prefill_ms",
+        "cache_bytes",
+        "total_elapsed_ms",
+        "memory_valid",
+        "verified_repairs"
+      ],
+      "stop": "Reject if memory becomes invalid or saved prefill does not exceed cache/reset overhead.",
+      "sources": [
+        "https://raw.githubusercontent.com/ml-explore/mlx-lm/v0.31.2/mlx_lm/server.py"
+      ],
+      "status": "requires_preparation"
+    },
+    {
+      "id": "NGRAM-MOD",
+      "family": "model-free-speculation",
+      "priority": 2,
+      "requires": [
+        "complete no-speculation screen",
+        "verified clearing of shared ngram pool between tasks or matched per-attempt process restarts"
+      ],
+      "comparison": "ngram-simple versus ngram-mod, identical cold-pool boundaries; both also compared with no speculation.",
+      "metrics": [
+        "drafted_tokens",
+        "accepted_tokens",
+        "verification_ms",
+        "rollback_ms",
+        "total_elapsed_ms"
+      ],
+      "stop": "Reject cross-task pool contamination, lost repairs, unsafe memory or no net speedup.",
+      "sources": [
+        "https://github.com/ggml-org/llama.cpp/blob/master/docs/speculative.md"
+      ],
+      "status": "requires_preparation"
+    },
+    {
+      "id": "ADAPTIVE-NGRAM-SUFFIX",
+      "family": "custom-speculation",
+      "priority": 3,
+      "requires": [
+        "beneficial or diagnostically useful fixed-ngram screen",
+        "engine adapter for variable draft lengths and accepted-token counters",
+        "bounded task-local index",
+        "correct JSON/token matching and hybrid rollback"
+      ],
+      "comparison": "Fixed ngram versus bounded suffix lookup and adaptive draft lengths; include no-speculation action. Train/tune only on development traces.",
+      "metrics": [
+        "accepted_prefix_length",
+        "draft_ms",
+        "verification_ms",
+        "rollback_ms",
+        "index_bytes",
+        "total_elapsed_ms"
+      ],
+      "stop": "Reject if controller/index overhead cancels savings, repair losses occur, or memory rises beyond the envelope.",
+      "sources": [
+        "https://arxiv.org/abs/2411.04975"
+      ],
+      "status": "requires_preparation"
+    },
+    {
+      "id": "DFLASH",
+      "family": "diffusion-drafter",
+      "priority": 4,
+      "requires": [
+        "resident target baseline with spare memory",
+        "exact target-compatible draft artifact, revision, hash, size and license",
+        "pinned engine/native tools/sampling and state-restoration validation",
+        "disk preflight and explicit artifact selection"
+      ],
+      "comparison": "Same target with and without compatible diffusion drafter; same quantization, prompts and budgets.",
+      "metrics": [
+        "draft_weight_bytes",
+        "peak_memory",
+        "accepted_tokens",
+        "drafted_tokens",
+        "verification_ms",
+        "total_elapsed_ms"
+      ],
+      "stop": "Reject if extra residency causes pressure, tool validity fails, repair yield falls, or end-to-end time does not improve.",
+      "sources": [
+        "https://arxiv.org/abs/2602.06036",
+        "https://github.com/z-lab/dflash"
+      ],
+      "status": "requires_preparation"
+    },
+    {
+      "id": "MTP-EAGLE-DSpark",
+      "family": "learned-drafting",
+      "priority": 5,
+      "requires": [
+        "target baseline and complete screen",
+        "select ONE supported target-specific head/drafter",
+        "exact artifact provenance and additional footprint",
+        "sampling/state correctness gate"
+      ],
+      "comparison": "Chosen compatible drafter versus no speculation. Separate configurations for MTP, EAGLE-3 or DSpark; never combine in the first arm.",
+      "metrics": [
+        "accepted_tokens",
+        "drafted_tokens",
+        "draft_ms",
+        "verification_ms",
+        "peak_memory",
+        "verified_repairs"
+      ],
+      "stop": "Reject poor amortization, state/tool failures, memory invalidity or repair loss.",
+      "sources": [
+        "https://arxiv.org/abs/2503.01840",
+        "https://github.com/ggml-org/llama.cpp/blob/master/docs/speculative.md"
+      ],
+      "status": "requires_preparation"
+    },
+    {
+      "id": "EVIDENCE-SELECTION",
+      "family": "custom-context",
+      "priority": 3,
+      "requires": [
+        "viable baseline with context growth/redundancy evidence",
+        "tokenizer/template budget accounting",
+        "exact versioned source spans and complete tool-message groups",
+        "dedup-reference invalidation when evidence is evicted"
+      ],
+      "comparison": "Existing bounded reads versus logged evidence selection by marginal coverage per token; same task report, no oracle feedback.",
+      "metrics": [
+        "prompt_tokens",
+        "cached_tokens",
+        "context_limit_failures",
+        "compaction_ms",
+        "rereads",
+        "verified_repairs"
+      ],
+      "stop": "Reject dangling tool references, silent evidence corruption or fewer repairs even if token counts fall.",
+      "sources": [
+        "https://arxiv.org/abs/2307.03172"
+      ],
+      "status": "requires_preparation"
+    },
+    {
+      "id": "JOINT-CACHE-BUDGET",
+      "family": "custom-memory-controller",
+      "priority": 5,
+      "requires": [
+        "streaming engine with explicit adjustable expert/conversation cache budgets",
+        "active and retained memory accounting",
+        "measured marginal latency per MiB",
+        "safe between-request changes with hysteresis"
+      ],
+      "comparison": "Fixed allocations versus allocation by measured time saved per MiB under the same total memory envelope.",
+      "metrics": [
+        "expert_cache_bytes",
+        "prompt_cache_bytes",
+        "physical_read_bytes",
+        "prefill_ms",
+        "allocation_churn",
+        "total_elapsed_ms"
+      ],
+      "stop": "Reject allocation oscillation, pressure, increased total time or repair loss.",
+      "sources": [
+        "https://arxiv.org/abs/2312.11514"
+      ],
+      "status": "requires_preparation"
+    },
+    {
+      "id": "EXACT-EXPERT-PREFETCH",
+      "family": "streaming-MoE",
+      "priority": 5,
+      "requires": [
+        "selected viable streaming backend",
+        "native expert routing traces and physical I/O counters",
+        "reactive baseline and cache replay headroom",
+        "bounded transfer predictor that never overrides native routing"
+      ],
+      "comparison": "Reactive routing/cache, then coalesced reads, then bounded history/cross-layer prefetch, then learned SpecPrefetch-style predictor; one factor per arm.",
+      "metrics": [
+        "physical_read_bytes",
+        "logical_read_bytes",
+        "residual_misses",
+        "prefetch_waste",
+        "overlap_ms",
+        "routing_agreement",
+        "verified_repairs"
+      ],
+      "stop": "Reject native routing changes or transfer costs exceeding saved stalls; hit rate alone cannot promote.",
+      "sources": [
+        "https://arxiv.org/abs/2607.24787",
+        "https://arxiv.org/abs/2312.11514"
+      ],
+      "status": "requires_preparation"
+    },
+    {
+      "id": "FULL-DIFFUSION",
+      "family": "alternative-model",
+      "priority": 6,
+      "requires": [
+        "one selected small diffusion checkpoint with exact provenance and tool-call capability",
+        "working Apple runtime and quantization path",
+        "measured fit and cold start",
+        "same Go CLI tool protocol adapter"
+      ],
+      "comparison": "Selected diffusion stack against the resident autoregressive winner. Then one Fast-dLLM/cache or confidence-profile change at a time; stack comparisons are not isolated engine gains.",
+      "metrics": [
+        "denoising_steps",
+        "committed_tokens_per_step",
+        "prefill_ms",
+        "total_elapsed_ms",
+        "peak_memory",
+        "native_tool_validity",
+        "verified_repairs"
+      ],
+      "stop": "Reject slower complete repairs, insufficient tool capability, unsafe memory or degraded repair quality.",
+      "sources": [
+        "https://arxiv.org/abs/2505.22618",
+        "https://arxiv.org/abs/2509.26328",
+        "https://arxiv.org/abs/2606.02955",
+        "https://arxiv.org/abs/2505.15781"
+      ],
+      "status": "requires_preparation"
+    },
+    {
+      "id": "LAYERSKIP-BITNET",
+      "family": "alternative-model",
+      "priority": 7,
+      "requires": [
+        "choose one specifically trained checkpoint",
+        "exact artifact size/hash/license and Apple runtime",
+        "native tool-call gate and real repair fit"
+      ],
+      "comparison": "Separate model-stack comparisons: LayerSkip-trained self-speculation or native low-bit model. Do not apply arbitrary layer dropping or label post-training quantization as BitNet.",
+      "metrics": [
+        "peak_memory",
+        "total_elapsed_ms",
+        "native_tool_validity",
+        "verified_repairs"
+      ],
+      "stop": "Reject model substitution with inadequate repair quality despite reduced memory.",
+      "sources": [
+        "https://github.com/facebookresearch/LayerSkip",
+        "https://arxiv.org/abs/2504.12285"
+      ],
+      "status": "requires_preparation"
+    },
+    {
+      "id": "AGGRESSIVE-KV",
+      "family": "cache-precision",
+      "priority": 6,
+      "requires": [
+        "measured KV footprint material to memory limit",
+        "completed conservative Q8 comparison",
+        "supported quantized cache kernels for selected architecture"
+      ],
+      "comparison": "Q8 baseline versus one lower-bit or asymmetric cache method; no simultaneous weight quantization change.",
+      "metrics": [
+        "kv_bytes",
+        "peak_memory",
+        "dequantization_ms",
+        "verified_repairs",
+        "total_elapsed_ms"
+      ],
+      "stop": "Reject if smaller cache adds too much compute or loses repairs; paper benchmark wins are not local evidence.",
+      "sources": [
+        "https://arxiv.org/abs/2402.02750",
+        "https://arxiv.org/abs/2510.11236"
+      ],
+      "status": "requires_preparation"
+    }
+  ]
+}

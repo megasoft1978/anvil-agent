@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "backend": "turboquant",
+  "candidate": {
+    "id": "turboquant-qwen36-tq3-g32-v061-stream-cache1",
+    "engine": "TurboQuant-MLX",
+    "purpose": "same Qwen3.6-35B-A3B model family through TurboQuant v0.6.1 expert streaming with a conservative 1 GiB expert cache"
+  },
+  "model": {
+    "id": "qwen36-35b-a3b-tq3-g32-v061",
+    "request_id": "/tmp/turboquant-qwen36-tq3-g32",
+    "path": "/tmp/turboquant-qwen36-tq3-g32",
+    "bytes": 16925047983,
+    "repo": "manjunathshiva/Qwen3.6-35B-A3B-tq3-g32",
+    "revision": "22d188ad7951b2b107fd84a332992e432dfc57a6",
+    "format": "safetensors-directory",
+    "quantization": "TurboQuant tq3 group-size 32",
+    "index_total_parameters": 37139910574,
+    "index_total_size": 16924777968,
+    "files_sha256": {
+      "model-00001-of-00004.safetensors": "1f9be0a39870634a6a8f2c80a8f14b38f45ad4b3d3927d9c9bb75d31279ec515",
+      "model-00002-of-00004.safetensors": "d7f04f2fd3bbd20e80c6f019764ef16629589d7634d24b22650d00ccbfe11660",
+      "model-00003-of-00004.safetensors": "9abf6cfa9b4aac947ccbb8821493e0ed40538205c3fc11a8aa7b76fe3f399bd4",
+      "model-00004-of-00004.safetensors": "2e1c23ac7b44b852d615e448f6a33c3f3d3cd8e5d909802d610e80ad245064e9",
+      "model.safetensors.index.json": "1574250c50dbba0edcdff3dc7583d02ec240911e55a5b05880ab8812f38fcb90",
+      "config.json": "08615e9182ac949cb1e71aa03dc4d63834058e5a4bdd2326dbed1d1b6e022366",
+      "tokenizer.json": "87a7830d63fcf43bf241c3c5242e96e62dd3fdc29224ca26fed8ea333db72de4",
+      "tokenizer_config.json": "b2bed5e033438f09f22b0ce9522115b4807d9bbcc3b82bf23372cb74d93ed081"
+    }
+  },
+  "server": {
+    "backend": "turboquant",
+    "endpoint": "http://127.0.0.1:8127/v1",
+    "health_path": "/health",
+    "health_accept_status": 200,
+    "models_path": "/v1/models",
+    "props_path": "/props",
+    "template_path": "/tmp/turboquant-qwen36-tq3-g32/chat_template.jinja",
+    "binary": "/tmp/turboquant-stream-server",
+    "version_probe": ["/tmp/turboquant-stream-server", "--version"],
+    "version_expected": "0.6.1",
+    "model_flag": "--model",
+    "process_pattern": "turboquant-stream-server.*--port 8127",
+    "host": "127.0.0.1",
+    "port": 8127,
+    "env": {
+      "TQ_STREAM_CACHE_GB": "1",
+      "TQ_STREAM_PREFETCH_WORKERS": "8",
+      "TQ_STREAM_PREFETCH_AHEAD": "0",
+      "TQ_STREAM_FAST": "0"
+    },
+    "common_flags": [
+      "--prompt-cache-size",
+      "0",
+      "--prompt-cache-bytes",
+      "0",
+      "--prompt-concurrency",
+      "1",
+      "--decode-concurrency",
+      "1",
+      "--prefill-step-size",
+      "128",
+      "--max-tokens",
+      "3072",
+      "--log-level",
+      "INFO"
+    ],
+    "profiles": {
+      "stream-cache1": {
+        "context_label": "OpenAI-compatible mlx-lm server with TurboQuant expert streaming and 1 GiB LRU cache",
+        "flags": []
+      }
+    },
+    "drain": {
+      "mode": "not_applicable",
+      "poll_ms": 1000,
+      "timeout_ms": 60000,
+      "explanation": "The disposable stream wrapper uses prompt-cache-size=0 and a single serialized benchmark worker; mlx-lm exposes no /slots endpoint."
+    },
+    "slot_cache_clear": {
+      "mode": "not_applicable",
+      "explanation": "Prompt caching is disabled for this memory-bounded TurboQuant screen."
+    }
+  },
+  "cli": {
+    "default_model": "/tmp/turboquant-qwen36-tq3-g32",
+    "main_timeout_seconds": 300,
+    "control_timeout_seconds": 120,
+    "max_turns": 16,
+    "max_tokens": 3072,
+    "read_output_limit": 32768,
+    "search_output_limit": 32768,
+    "warmup_timeout_seconds": 300,
+    "warmup_max_tokens": 1024,
+    "gate_timeout_seconds": 300,
+    "gate_max_tokens": 1024,
+    "warmup_agent": {
+      "tool_schema_policy": "stable",
+      "close_out_reserve": false
+    },
+    "gate_agent": {
+      "tool_schema_policy": "stable",
+      "close_out_reserve": false
+    }
+  },
+  "budgets": {
+    "fit-probe": {
+      "timeout_seconds": 300,
+      "max_turns": 16,
+      "max_tokens": 3072
+    }
+  },
+  "policy": {
+    "warm_weights": true,
+    "warm_task_scored": false,
+    "clear_prompt_cache_between_attempts": true,
+    "preserve_prefix_cache_within_task": false,
+    "one_server_one_attempt": true,
+    "counterbalance": true,
+    "verification_outside_model_worktree": true,
+    "fail_closed_oracle": true,
+    "pending_validation_is_not_pass": true,
+    "backend_note": "TurboQuant-MLX v0.6.1 is pinned to source commit 1f2fecf64aa3dca2e30f422a34b466e1dfc31db9 (tag object refs/tags/v0.6.1 resolves to this commit). The official tq3-g32 Qwen3.6 directory is served through a disposable wrapper around mlx_lm.server that calls the package's supported stream.loader path. The wrapper logs prefill and generation rates; prompt caching is disabled and TQ_STREAM_CACHE_GB=1 is recorded in server.env."
+  },
+  "experiments": [
+    {
+      "id": "TQ-QWEN36-STREAM-CACHE1-IMMER",
+      "hypothesis": "The official same-family Qwen3.6 TurboQuant artifact can complete the smallest verified coding fixture through the supported expert-streaming loader under a fixed 1 GiB cache and the same stable native-tool agent protocol.",
+      "budget": "fit-probe",
+      "server_profile": "stream-cache1",
+      "tasks": [
+        "immer-array-push-fix"
+      ],
+      "seeds": [
+        42,
+        31415
+      ],
+      "agent": {
+        "tool_schema_policy": "stable",
+        "close_out_reserve": false
+      },
+      "scored": true,
+      "gate": "native-tool-and-verified-repair-fit-probe"
+    }
+  ]
+}

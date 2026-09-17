@@ -1,0 +1,313 @@
+{
+  "schema_version": 1,
+  "tasks": {
+    "permissions-cache": {
+      "kind": "scenario",
+      "scenario": "benchmarks/scenarios/permissions-cache.json",
+      "oracle": "benchmarks/oracle/permissions-cache",
+      "oracle_keys": [
+        "A",
+        "B",
+        "C",
+        "D"
+      ],
+      "success_marker": "PERMISSIONS-CACHE OK",
+      "reference_patches": [
+        {
+          "path": "server/permissions/cache.ts",
+          "oldText": "  return userId;",
+          "newText": "  return `${userId}:${resourceId}`;"
+        },
+        {
+          "path": "server/permissions/service.ts",
+          "oldText": "  store = store.filter((p) => !(p.userId === userId && p.resourceId === resourceId));\n}",
+          "newText": "  store = store.filter((p) => !(p.userId === userId && p.resourceId === resourceId));\n  cache.invalidate(userId, resourceId);\n}"
+        },
+        {
+          "path": "server/routes/resource.ts",
+          "oldText": "  record({ userId, resourceId, requested, granted: requested, ts: Date.now() });",
+          "newText": "  record({ userId, resourceId, requested, granted, ts: Date.now() });"
+        },
+        {
+          "path": "server/permissions/cache.ts",
+          "oldText": "    order.pop(); // evict when over capacity",
+          "newText": "    order.shift(); // evict the least-recently-used entry"
+        }
+      ],
+      "invalid": {
+        "mode": "syntax-error",
+        "path": "server/permissions/cache.ts"
+      },
+      "source_files": [
+        "shared/types.ts",
+        "server/permissions/cache.ts",
+        "server/permissions/service.ts",
+        "server/audit/logger.ts",
+        "server/routes/resource.ts"
+      ]
+    },
+    "job-queue": {
+      "kind": "scenario",
+      "scenario": "benchmarks/scenarios/job-queue.json",
+      "oracle": "benchmarks/oracle/job-queue",
+      "oracle_keys": [
+        "A",
+        "B",
+        "C",
+        "D"
+      ],
+      "success_marker": "JOB-QUEUE OK",
+      "reference_patches": [
+        {
+          "path": "server/queue.ts",
+          "oldText": "  queued.sort((a, b) => a.createdAt - b.createdAt);",
+          "newText": "  queued.sort((a, b) => b.priority - a.priority || a.createdAt - b.createdAt);"
+        },
+        {
+          "path": "server/worker.ts",
+          "oldText": "  // BUG B: no check for an already-terminal job before running the handler again -- calling processOnce on a\n  // job that is already \"done\" re-runs its side effect (e.g. sends a second receipt email, charges a card\n  // twice) instead of being a safe no-op.\n  markInFlight(id);",
+          "newText": "  if (job.status === \"done\" || job.status === \"failed\") return \"skipped\";\n\n  markInFlight(id);"
+        },
+        {
+          "path": "server/worker.ts",
+          "oldText": "  const delay = BASE_DELAY_MS * attempt;",
+          "newText": "  const delay = BASE_DELAY_MS * 2 ** (attempt - 1);"
+        },
+        {
+          "path": "server/queue.ts",
+          "oldText": "    if (job.status === \"done\" && job.createdAt !== undefined && now - job.createdAt > RETENTION_MS) {",
+          "newText": "    if (job.status === \"done\" && job.doneAt !== undefined && now - job.doneAt > RETENTION_MS) {"
+        }
+      ],
+      "invalid": {
+        "mode": "syntax-error",
+        "path": "server/queue.ts"
+      },
+      "source_files": [
+        "shared/types.ts",
+        "server/queue.ts",
+        "server/worker.ts",
+        "server/jobs/handlers.ts",
+        "server/routes/jobs.ts"
+      ]
+    },
+    "notify-channel": {
+      "kind": "scenario",
+      "scenario": "benchmarks/scenarios/notify-channel.json",
+      "oracle": "benchmarks/oracle/notify-channel",
+      "oracle_keys": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E",
+        "F"
+      ],
+      "success_marker": "ALL 6 NOTIFY-CHANNEL CHECKS OK",
+      "reference_files": {
+        "server/channels/sms.ts": "import type { Channel, SendResult } from \"../types\";\n\nconst E164 = /^\\+[0-9]{8,15}$/;\n\nexport const smsChannel: Channel = {\n  name: \"sms\",\n  async send(to, subject, body): Promise<SendResult> {\n    if (!E164.test(to)) return { ok: false, channel: \"sms\", error: \"invalid_number\" };\n    void subject;\n    void body.slice(0, 160);\n    return { ok: true, channel: \"sms\" };\n  },\n};\n"
+      },
+      "reference_patches": [
+        {
+          "path": "server/dispatch.ts",
+          "oldText": "import { emailChannel } from \"./channels/email\";",
+          "newText": "import { emailChannel } from \"./channels/email\";\nimport { smsChannel } from \"./channels/sms\";"
+        },
+        {
+          "path": "server/dispatch.ts",
+          "oldText": "const CHANNELS = [emailChannel];",
+          "newText": "const CHANNELS = [emailChannel, smsChannel];"
+        },
+        {
+          "path": "server/dispatch.ts",
+          "oldText": "  const body = render(n.templateId, n.vars);\n  return channel.send(n.to, n.templateId, body);",
+          "newText": "  let body: string;\n  try {\n    body = render(n.templateId, n.vars);\n  } catch {\n    return { ok: false, channel: n.channel, error: \"unknown_template\" };\n  }\n  return channel.send(n.to, n.templateId, body);"
+        }
+      ],
+      "invalid": {
+        "mode": "syntax-error",
+        "path": "server/dispatch.ts"
+      },
+      "source_files": [
+        "server/types.ts",
+        "server/templates.ts",
+        "server/channels/email.ts",
+        "server/dispatch.ts",
+        "server/channels/sms.ts"
+      ],
+      "base_absent_files": [
+        "server/channels/sms.ts"
+      ]
+    },
+    "immer-array-push-fix": {
+      "kind": "pilot",
+      "pilot_manifest": "go-agent/pilot/manifest.json",
+      "source_root": "go-agent/pilot/worktrees/immer-array-push-fix",
+      "source_files": [
+        "src/plugins/arrayMethods.ts"
+      ],
+      "base_commit": "a3be9df762c1dbe9959a011ddbab0ce838cbc468",
+      "reference": {
+        "repo": "https://github.com/immerjs/immer.git",
+        "commit": "d2c158f5bac7081a760bbaf501ea5c360b7856e1"
+      },
+      "reference_local_patches": [
+        {
+          "path": "src/plugins/arrayMethods.ts",
+          "oldText": "\t\t\tconst index = startIndex + i",
+          "newText": "\t\t\tconst index = \"\" + (startIndex + i)"
+        }
+      ],
+      "invalid": {
+        "mode": "syntax-error",
+        "path": "src/plugins/arrayMethods.ts"
+      }
+    },
+    "zod-int-json-schema": {
+      "kind": "pilot",
+      "pilot_manifest": "go-agent/pilot/manifest.json",
+      "source_root": "go-agent/pilot/worktrees/zod-int-json-schema",
+      "source_files": [
+        "packages/zod/src/v4/core/checks.ts"
+      ],
+      "base_commit": "e7604717801fe5cc17c525fb92abe0abeae0ae6e",
+      "reference": {
+        "repo": "https://github.com/colinhacks/zod.git",
+        "commit": "7a00236683c79000dbab0d92f6faf0b7fba39f59"
+      },
+      "reference_local_patches": [
+        {
+          "path": "packages/zod/src/v4/core/checks.ts",
+          "oldText": "    const [minimum, maximum] = util.NUMBER_FORMAT_RANGES[def.format];\n\n    inst._zod.onattach.push((inst) => {\n      const bag = inst._zod.bag;\n      bag.format = def.format;\n      bag.minimum = minimum;\n      bag.maximum = maximum;",
+          "newText": "    const [minimum, maximum] = util.NUMBER_FORMAT_RANGES[def.format];\n\n    inst._zod.onattach.push((inst) => {\n      const bag = inst._zod.bag;\n      bag.format = def.format;\n      if (bag.minimum === undefined || minimum > bag.minimum) bag.minimum = minimum;\n      if (bag.maximum === undefined || maximum < bag.maximum) bag.maximum = maximum;"
+        },
+        {
+          "path": "packages/zod/src/v4/core/checks.ts",
+          "oldText": "    const [minimum, maximum] = util.BIGINT_FORMAT_RANGES[def.format];\n\n    inst._zod.onattach.push((inst) => {\n      const bag = inst._zod.bag;\n      bag.format = def.format;\n      bag.minimum = minimum;\n      bag.maximum = maximum;",
+          "newText": "    const [minimum, maximum] = util.BIGINT_FORMAT_RANGES[def.format];\n\n    inst._zod.onattach.push((inst) => {\n      const bag = inst._zod.bag;\n      bag.format = def.format;\n      if (bag.minimum === undefined || minimum > bag.minimum) bag.minimum = minimum;\n      if (bag.maximum === undefined || maximum < bag.maximum) bag.maximum = maximum;"
+        }
+      ],
+      "invalid": {
+        "mode": "syntax-error",
+        "path": "packages/zod/src/v4/core/checks.ts"
+      }
+    },
+    "zod-memoizer-retention": {
+      "kind": "pilot",
+      "pilot_manifest": "go-agent/pilot/manifest.json",
+      "source_root": "go-agent/pilot/worktrees/zod-memoizer-retention",
+      "source_files": [
+        "packages/zod/src/v4/core/memoizer.ts"
+      ],
+      "base_commit": "e54716cb5676f812cefea686eb07e2df961a0cf8",
+      "reference": {
+        "repo": "https://github.com/colinhacks/zod.git",
+        "commit": "36f17960d1defca5d0896d9424f4e1059fbbf081"
+      },
+      "invalid": {
+        "mode": "syntax-error",
+        "path": "packages/zod/src/v4/core/memoizer.ts"
+      }
+    },
+    "zod-discriminated-union-defaulted-tags": {
+      "kind": "pilot",
+      "pilot_manifest": "go-agent/pilot/manifest.json",
+      "source_root": "go-agent/pilot/worktrees/zod-discriminated-union-defaulted-tags",
+      "source_files": [
+        "packages/zod/src/v4/core/compile.ts",
+        "packages/zod/src/v4/core/schemas.ts"
+      ],
+      "base_commit": "1c51cbe0fe23d09f8d520b31487d50a01588fae5",
+      "reference": {
+        "repo": "https://github.com/colinhacks/zod.git",
+        "commit": "b12aa523e7e2617c4296cccf9b24d6558ed23e95"
+      },
+      "invalid": {
+        "mode": "syntax-error",
+        "path": "packages/zod/src/v4/core/compile.ts"
+      }
+    },
+    "immer-array-methods-noop-sharing": {
+      "kind": "pilot",
+      "pilot_manifest": "go-agent/pilot/manifest.json",
+      "source_root": "go-agent/pilot/worktrees/immer-array-methods-noop-sharing",
+      "source_files": [
+        "src/plugins/arrayMethods.ts",
+        "src/utils/common.ts"
+      ],
+      "base_commit": "e3df956dca6f62c9053ab750b2c8b8a518f3e001",
+      "reference": {
+        "repo": "https://github.com/immerjs/immer.git",
+        "commit": "907395ad21aef22ed2c71d11f4fb4172683ab62a"
+      },
+      "invalid": {
+        "mode": "syntax-error",
+        "path": "src/plugins/arrayMethods.ts"
+      }
+    },
+    "qs-stringify-date-filter": {
+      "kind": "pilot",
+      "pilot_manifest": "go-agent/pilot/manifest.json",
+      "source_root": "go-agent/pilot/worktrees/qs-stringify-date-filter",
+      "source_files": [
+        "lib/stringify.js"
+      ],
+      "base_commit": "8859c37470e11b42b547b275e4e9bd0bc8cc5464",
+      "reference": {
+        "repo": "https://github.com/ljharb/qs.git",
+        "commit": "62fd25480b0b0d9c0a667ee67e13608a363f5d0e"
+      },
+      "invalid": {
+        "mode": "syntax-error",
+        "path": "lib/stringify.js"
+      }
+    },
+    "zod-prefault-undefined": {
+      "kind": "pilot",
+      "pilot_manifest": "go-agent/holdouts/manifest.json",
+      "source_root": "go-agent/holdouts/worktrees/zod-prefault-undefined",
+      "source_files": [
+        "packages/zod/src/v4/core/compile.ts",
+        "packages/zod/src/v4/core/schemas.ts",
+        "packages/zod/src/v4/mini/schemas.ts"
+      ],
+      "base_commit": "0c483c58849fdb6445aea4f54b1bac6b57ab3d22",
+      "reference": {
+        "repo": "https://github.com/colinhacks/zod.git",
+        "commit": "9446b5cc14c5bf137790f1f66abf602044871223"
+      },
+      "reference_local_root": "go-agent/holdouts/repos/zod",
+      "invalid": {
+        "mode": "syntax-error",
+        "path": "packages/zod/src/v4/core/compile.ts"
+      }
+    },
+    "undici-mockagent-global-fetch": {
+      "kind": "pilot",
+      "pilot_manifest": "go-agent/holdouts/manifest.json",
+      "source_root": "go-agent/holdouts/worktrees/undici-mockagent-global-fetch",
+      "source_files": [
+        "lib/mock/mock-agent.js"
+      ],
+      "base_commit": "7f50f74d02c275cb94e0d04c74c37f3d61b70cef",
+      "reference": {
+        "repo": "https://github.com/nodejs/undici.git",
+        "commit": "4ae29b24d6c14c5ee7e3644b94c964a602c786e1"
+      },
+      "reference_local_root": "go-agent/holdouts/repos/undici",
+      "invalid": {
+        "mode": "syntax-error",
+        "path": "lib/mock/mock-agent.js"
+      }
+    }
+  },
+  "holdouts": {
+    "required_before_tuning": 2,
+    "status": "complete",
+    "tasks": [
+      "zod-prefault-undefined",
+      "undici-mockagent-global-fetch"
+    ],
+    "reason": "Two post-boundary holdout contracts passed base/reference/invalid validation in session 20260913T131930072Z-b401994db269."
+  }
+}

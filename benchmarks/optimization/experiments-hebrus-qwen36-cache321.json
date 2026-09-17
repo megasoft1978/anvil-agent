@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "backend": "hebrus",
+  "candidate": {
+    "id": "hebrus-qwen36-stable-affine4-ssd-cache321",
+    "engine": "Hebrus",
+    "purpose": "same Qwen3.6-35B-A3B family through the qualified Metal SSD expert-streaming path with the smallest complete expert cache tier"
+  },
+  "model": {
+    "id": "qwen36-35b-a3b-hebrus-stable-affine4-g64",
+    "request_id": "qwen3.6-35b-a3b",
+    "path": "/tmp/hebrus-benchmark.zbmJeC/gguf/Qwen3.6-35B-A3B-Hebrus-ExpertMajor-v2-MLX-Affine4-G64.gguf",
+    "bytes": 20808566880,
+    "sha256": "dd17266185833a9f05531ce366fd7284ddca1ed64aa3dcf06e321e8c72c9ea3d",
+    "repo": "andreaborio/Qwen3.6-35B-A3B-Hebrus-GGUF",
+    "revision": "e002665becd2db618897effb213030fdf92e7e98",
+    "file": "Qwen3.6-35B-A3B-Hebrus-ExpertMajor-v2-MLX-Affine4-G64.gguf",
+    "format": "gguf",
+    "quantization": "ExpertMajor-v2 MLX Affine4 G64"
+  },
+  "server": {
+    "backend": "hebrus",
+    "endpoint": "http://127.0.0.1:8126/v1",
+    "health_path": "/v1/models",
+    "health_accept_status": 200,
+    "health_body_regex": "qwen3\\.6-35b-a3b",
+    "models_path": "/v1/models",
+    "props_path": "/props",
+    "binary": "/tmp/hebrus-benchmark.zbmJeC/hebrus-server",
+    "version_probe": ["/tmp/hebrus-benchmark.zbmJeC/hebrus-server", "--build-info"],
+    "commit_expected": "7600fe183325",
+    "host": "127.0.0.1",
+    "port": 8126,
+    "process_pattern": "hebrus-server.*--port 8126",
+    "common_flags": [
+      "--ssd-streaming",
+      "--ssd-streaming-cold",
+      "--ssd-streaming-cache-experts",
+      "321",
+      "--ctx",
+      "8192",
+      "-n",
+      "3072"
+    ],
+    "profiles": {
+      "fit-8192-cache321": {
+        "context_label": "8K benchmark context with the smallest complete 321-expert SSD cache tier",
+        "flags": []
+      }
+    },
+    "slot_cache_clear": {
+      "mode": "not_applicable",
+      "explanation": "Hebrus Qwen Chat Completions exposes no llama.cpp slot erase endpoint; the server has one serialized worker and no disk KV cache is enabled."
+    },
+    "drain": {
+      "mode": "not_applicable",
+      "poll_ms": 1000,
+      "timeout_ms": 60000,
+      "explanation": "Hebrus serializes inference and exposes no /slots idle endpoint."
+    }
+  },
+  "cli": {
+    "default_model": "qwen3.6-35b-a3b",
+    "main_timeout_seconds": 300,
+    "control_timeout_seconds": 120,
+    "max_turns": 16,
+    "max_tokens": 3072,
+    "read_output_limit": 32768,
+    "search_output_limit": 32768,
+    "warmup_timeout_seconds": 180,
+    "warmup_max_tokens": 1024,
+    "gate_timeout_seconds": 180,
+    "gate_max_tokens": 1024,
+    "warmup_agent": {
+      "tool_schema_policy": "stable",
+      "close_out_reserve": false
+    },
+    "gate_agent": {
+      "tool_schema_policy": "stable",
+      "close_out_reserve": false
+    }
+  },
+  "budgets": {
+    "fit-probe": {
+      "timeout_seconds": 300,
+      "max_turns": 16,
+      "max_tokens": 3072
+    }
+  },
+  "policy": {
+    "warm_weights": true,
+    "warm_task_scored": false,
+    "clear_prompt_cache_between_attempts": true,
+    "preserve_prefix_cache_within_task": false,
+    "one_server_one_attempt": true,
+    "counterbalance": true,
+    "verification_outside_model_worktree": true,
+    "fail_closed_oracle": true,
+    "pending_validation_is_not_pass": true,
+    "backend_note": "This is the pinned Hebrus source build and exact ExpertMajor-v2 Stable Affine4 artifact. --ssd-streaming selects the qualified bounded SSD path; --ssd-streaming-cold removes popularity preload; --ssd-streaming-cache-experts 321 fixes the smallest complete routed-expert cache tier after the automatic target exhausted host headroom during the first fit probe."
+  },
+  "experiments": [
+    {
+      "id": "HEBRUS-QWEN36-SSD-CACHE321-IMMER",
+      "hypothesis": "Fixing Hebrus at the smallest complete 321-expert SSD cache tier keeps the same Qwen3.6 repair fit within 16 GiB host headroom without changing the agent protocol or task.",
+      "budget": "fit-probe",
+      "server_profile": "fit-8192-cache321",
+      "tasks": [
+        "immer-array-push-fix"
+      ],
+      "seeds": [
+        42,
+        31415
+      ],
+      "agent": {
+        "tool_schema_policy": "stable",
+        "close_out_reserve": false
+      },
+      "scored": true,
+      "gate": "native-tool-and-verified-repair-fit-probe"
+    }
+  ]
+}

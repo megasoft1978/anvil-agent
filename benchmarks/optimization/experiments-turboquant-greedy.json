@@ -1,0 +1,254 @@
+{
+  "schema_version": 1,
+  "backend": "turboquant",
+  "model": {
+    "id": "/Users/megasoft78/.anvil-agent/models/Qwen3.6-35B-A3B-tq3-g32",
+    "request_id": "/Users/megasoft78/.anvil-agent/models/Qwen3.6-35B-A3B-tq3-g32",
+    "path": "/Users/megasoft78/.anvil-agent/models/Qwen3.6-35B-A3B-tq3-g32",
+    "bytes": 16925047983,
+    "repo": "manjunathshiva/Qwen3.6-35B-A3B-tq3-g32",
+    "format": "safetensors-directory",
+    "quantization": "turboquant-tq3-g32"
+  },
+  "server": {
+    "backend": "turboquant",
+    "endpoint": "http://127.0.0.1:8124/v1",
+    "health_path": "/health",
+    "models_path": "/v1/models",
+    "props_path": "/props",
+    "template_path": "/Users/megasoft78/.anvil-agent/models/Qwen3.6-35B-A3B-tq3-g32/chat_template.jinja",
+    "binary": "/tmp/anvil-turboquant-venv/bin/turboquant-serve",
+    "version_probe": [
+      "/tmp/anvil-turboquant-venv/bin/python",
+      "-m",
+      "pip",
+      "show",
+      "turboquant-mlx-full"
+    ],
+    "version_expected": "0.25.0",
+    "model_flag": "--model",
+    "process_pattern": "turboquant-serve.*--port 8124",
+    "host": "127.0.0.1",
+    "port": 8124,
+    "common_flags": [
+      "--max-active-experts", "4",
+      "--prefetch-workers", "1",
+      "--prefetch-ahead", "0",
+      "--no-page-cache",
+      "--no-hotlist",
+      "--prefill-step-size", "128",
+      "--prompt-concurrency", "1",
+      "--prompt-cache-size", "0",
+      "--prompt-cache-bytes", "0",
+      "--temp", "0",
+      "--top-p", "1",
+      "--min-p", "0",
+      "--max-tokens", "3072",
+      "--chat-template-args", "{\"enable_thinking\":false}"
+    ],
+    "profiles": {
+      "baseline": {
+        "flags": ["--cache-budget-gb", "2"]
+      },
+      "low-cache": {
+        "flags": ["--cache-budget-gb", "1"]
+      },
+      "low-cache-greedy": {
+        "flags": ["--cache-budget-gb", "1", "--tool-syntax-greedy"]
+      },
+      "kv-q8k3": {
+        "flags": [
+          "--cache-budget-gb", "2",
+          "--kv-k-bits", "8",
+          "--kv-v-bits", "3",
+          "--kv-min-tokens", "128",
+          "--kv-group-size", "64"
+        ]
+      },
+      "prefetch-2": {
+        "flags": [
+          "--cache-budget-gb", "2",
+          "--prefetch-workers", "2"
+        ]
+      }
+    },
+    "drain": {
+      "mode": "not_applicable",
+      "poll_ms": 1000,
+      "timeout_ms": 60000,
+      "explanation": "TurboQuant is configured with prompt-cache-size=0 and exposes no /slots endpoint. Each request starts without a retained conversation cache."
+    },
+    "slot_cache_clear": {
+      "mode": "not_applicable",
+      "explanation": "TurboQuant prompt cache is disabled for this memory-bounded screen."
+    }
+  },
+  "cli": {
+    "default_model": "/Users/megasoft78/.anvil-agent/models/Qwen3.6-35B-A3B-tq3-g32",
+    "main_timeout_seconds": 300,
+    "control_timeout_seconds": 120,
+    "max_turns": 16,
+    "max_tokens": 3072,
+    "read_output_limit": 32768,
+    "search_output_limit": 32768,
+    "warmup_timeout_seconds": 300,
+    "warmup_max_tokens": 1024,
+    "gate_timeout_seconds": 300,
+    "gate_max_tokens": 1024,
+    "warmup_agent": {
+      "tool_schema_policy": "stable",
+      "close_out_reserve": false
+    },
+    "gate_agent": {
+      "tool_schema_policy": "stable",
+      "close_out_reserve": false
+    }
+  },
+  "budgets": {
+    "product-default-control": {
+      "timeout_seconds": 120,
+      "max_turns": 16,
+      "max_tokens": 1024
+    },
+    "main-screen": {
+      "timeout_seconds": 300,
+      "max_turns": 16,
+      "max_tokens": 3072
+    }
+  },
+  "policy": {
+    "warm_weights": true,
+    "warm_task_scored": false,
+    "clear_prompt_cache_between_attempts": true,
+    "preserve_prefix_cache_within_task": false,
+    "one_server_one_attempt": true,
+    "counterbalance": true,
+    "verification_outside_model_worktree": true,
+    "fail_closed_oracle": true,
+    "pending_validation_is_not_pass": true,
+    "backend_note": "TurboQuant prompt cache is disabled; server lifecycle and no-slot reset are recorded as not_applicable."
+  },
+  "experiments": [
+    {
+      "id": "E0-control",
+      "hypothesis": "The shipped product-default deadline is usable through the TurboQuant server and real Go CLI.",
+      "budget": "product-default-control",
+      "server_profile": "baseline",
+      "tasks": ["permissions-cache"],
+      "seeds": [42],
+      "agent": {"tool_schema_policy": "stable", "close_out_reserve": false},
+      "scored": false,
+      "gate": "record-only"
+    },
+    {
+      "id": "E0",
+      "hypothesis": "The bounded TurboQuant server and stable Go CLI schema provide a reproducible baseline for verified repair.",
+      "budget": "main-screen",
+      "server_profile": "baseline",
+      "tasks": ["permissions-cache", "job-queue", "immer-array-push-fix", "zod-int-json-schema"],
+      "seeds": [42, 31415],
+      "agent": {"tool_schema_policy": "stable", "close_out_reserve": false},
+      "scored": true,
+      "gate": "baseline-quality-and-measurement"
+    },
+    {
+      "id": "E1",
+      "hypothesis": "Sending explicit min_p=0 through the Go CLI preserves behavior while making sampling unambiguous.",
+      "budget": "main-screen",
+      "server_profile": "baseline",
+      "tasks": ["permissions-cache", "job-queue", "immer-array-push-fix", "zod-int-json-schema"],
+      "seeds": [42, 31415],
+      "agent": {"min_p": 0, "tool_schema_policy": "stable", "close_out_reserve": false},
+      "scored": true,
+      "requires": "evidence-selected",
+      "depends_on": [{"experiment_id": "E0", "condition": "verified_repair_no_pressure"}],
+      "gate": "no-lost-verified-tasks-and-paired-efficiency"
+    },
+    {
+      "id": "E2",
+      "hypothesis": "Dynamic tool-schema changes are unnecessary on the slow TurboQuant backend; stable declarations preserve correct edit behavior.",
+      "budget": "main-screen",
+      "server_profile": "baseline",
+      "tasks": ["permissions-cache", "job-queue", "immer-array-push-fix", "zod-int-json-schema"],
+      "seeds": [42, 31415],
+      "agent": {"tool_schema_policy": "dynamic"},
+      "scored": true,
+      "requires": "evidence-selected",
+      "depends_on": [{"experiment_id": "E1", "condition": "verified_repair_no_pressure"}],
+      "gate": "behavior-plus-schema-evidence"
+    },
+    {
+      "id": "E3",
+      "hypothesis": "Bounded read/search results reduce later prefill cost without causing exact-edit failures.",
+      "budget": "main-screen",
+      "server_profile": "baseline",
+      "tasks": ["permissions-cache", "job-queue", "immer-array-push-fix", "zod-int-json-schema"],
+      "seeds": [42, 31415],
+      "agent": {"tool_schema_policy": "stable", "close_out_reserve": false, "read_output_limit": 4096, "search_output_limit": 8192},
+      "scored": true,
+      "requires": "evidence-selected",
+      "depends_on": [{"experiment_id": "E2", "condition": "verified_repair_no_pressure"}],
+      "gate": "round-trips-and-exact-edit-quality"
+    },
+    {
+      "id": "E4",
+      "hypothesis": "Reducing the expert cache from 2 GB to 1 GB lowers unified-memory pressure while retaining useful routing quality.",
+      "budget": "main-screen",
+      "server_profile": "low-cache",
+      "tasks": ["permissions-cache", "job-queue", "immer-array-push-fix", "zod-int-json-schema"],
+      "seeds": [42, 31415],
+      "agent": {"tool_schema_policy": "stable", "close_out_reserve": false},
+      "scored": true,
+      "requires": "evidence-selected",
+      "gate": "quality-and-memory-headroom"
+    },
+    {
+      "id": "E4-syntax-greedy",
+      "hypothesis": "A supported structural greedy decoder preserves native tool-call syntax on the 1 GB cache while leaving argument values under the existing sampler.",
+      "budget": "main-screen",
+      "server_profile": "low-cache-greedy",
+      "tasks": ["permissions-cache", "job-queue", "immer-array-push-fix", "zod-int-json-schema"],
+      "seeds": [42, 31415],
+      "agent": {"tool_schema_policy": "stable", "close_out_reserve": false},
+      "scored": true,
+      "requires": "evidence-selected",
+      "gate": "tool-syntax-and-quality"
+    },
+    {
+      "id": "E5",
+      "hypothesis": "TurboQuant mixed K8/V3 KV compression reduces request-state memory at the same expert-cache budget.",
+      "budget": "main-screen",
+      "server_profile": "kv-q8k3",
+      "tasks": ["permissions-cache", "job-queue", "immer-array-push-fix", "zod-int-json-schema"],
+      "seeds": [42, 31415],
+      "agent": {"tool_schema_policy": "stable", "close_out_reserve": false},
+      "scored": true,
+      "requires": "evidence-selected",
+      "gate": "quality-memory-and-server-support"
+    },
+    {
+      "id": "E6",
+      "hypothesis": "Two prefetch workers improve streamed expert latency without triggering paging or quality loss.",
+      "budget": "main-screen",
+      "server_profile": "prefetch-2",
+      "tasks": ["permissions-cache", "job-queue", "immer-array-push-fix", "zod-int-json-schema"],
+      "seeds": [42, 31415],
+      "agent": {"tool_schema_policy": "stable", "close_out_reserve": false},
+      "scored": true,
+      "requires": "evidence-selected",
+      "gate": "latency-and-memory-headroom"
+    },
+    {
+      "id": "TQ-full",
+      "hypothesis": "The bounded TurboQuant configuration can complete the full prepared task inventory after the ordered screen.",
+      "budget": "main-screen",
+      "server_profile": "baseline",
+      "tasks": ["permissions-cache", "job-queue", "immer-array-push-fix", "zod-int-json-schema", "zod-memoizer-retention", "zod-discriminated-union-defaulted-tags", "immer-array-methods-noop-sharing", "qs-stringify-date-filter", "zod-prefault-undefined", "undici-mockagent-global-fetch"],
+      "seeds": [42],
+      "agent": {"tool_schema_policy": "stable", "close_out_reserve": false},
+      "scored": true,
+      "requires": "evidence-selected",
+      "gate": "full-task-inventory-confirmation"
+    }
+  ]
+}

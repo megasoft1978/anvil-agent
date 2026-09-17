@@ -1,0 +1,206 @@
+{
+  "schema_version": 1,
+  "backend": "llama",
+  "candidate": {
+    "id": "llama.cpp-qwen38-27b-gsq-rco-iq3-xxs",
+    "engine": "llama.cpp",
+    "purpose": "same-Go-CLI dense quality comparator after the smaller local Gemma fit probe"
+  },
+  "model": {
+    "id": "qwen38-27b-gsq-rco-iq3-xxs",
+    "request_id": "qwen38-27b-gsq-rco-iq3-xxs",
+    "path": "/Users/megasoft78/Desktop/Freelance/llm-memory-wall-research/models/gguf/qwen3.8-27b-gsq-rco/Qwen3.8-27B-GSQ-RCO-IQ3_XXS.gguf",
+    "bytes": 10094357632,
+    "sha256": "fdfcb6a29b11188956dfbfd904223588a6c1b77eb250c3e8a36e1bd269df91f7",
+    "repo": "ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF",
+    "revision": null,
+    "revision_note": "The local file's immutable SHA-256 is retained; the source revision was not retained with the copied artifact.",
+    "file": "Qwen3.8-27B-GSQ-RCO-IQ3_XXS.gguf",
+    "format": "gguf",
+    "quantization": "GSQ-RCO IQ3_XXS",
+    "architecture": "qwen35",
+    "parameter_class": "27B dense"
+  },
+  "server": {
+    "backend": "llama",
+    "endpoint": "http://127.0.0.1:8117/v1",
+    "health_path": "/health",
+    "models_path": "/v1/models",
+    "props_path": "/props",
+    "binary": "/opt/homebrew/bin/llama-server",
+    "version_expected": "b10809",
+    "commit_expected": "5266f24da",
+    "host": "127.0.0.1",
+    "port": 8117,
+    "process_pattern": "llama-server.*--port 8117",
+    "common_flags": [
+      "-ngl",
+      "99",
+      "-fa",
+      "on",
+      "--no-warmup",
+      "-np",
+      "1",
+      "--reasoning",
+      "off",
+      "--jinja",
+      "--offline",
+      "-ub",
+      "256",
+      "-b",
+      "256",
+      "--slot-save-path",
+      "/Users/megasoft78/.anvil-agent/slots/qwen38-27b-gsq-rco"
+    ],
+    "profiles": {
+      "fit-8192": {
+        "context": 8192,
+        "spec_type": "none"
+      },
+      "screen-8192": {
+        "context": 8192,
+        "spec_type": "none"
+      },
+      "screen-8192-ngram": {
+        "context": 8192,
+        "spec_type": "ngram-simple"
+      }
+    },
+    "slot_cache_clear": {
+      "method": "POST",
+      "path": "/slots/0?action=erase",
+      "success_status": 200,
+      "fallback": "stop-and-resume-before-next-attempt"
+    },
+    "drain": {
+      "poll_ms": 1000,
+      "timeout_ms": 60000,
+      "unknown_endpoint": "stop-before-next-attempt"
+    },
+    "slots_path": "/slots"
+  },
+  "cli": {
+    "default_model": "qwen38-27b-gsq-rco-iq3-xxs",
+    "main_timeout_seconds": 300,
+    "control_timeout_seconds": 120,
+    "max_turns": 16,
+    "max_tokens": 3072,
+    "read_output_limit": 32768,
+    "search_output_limit": 32768,
+    "warmup_timeout_seconds": 180,
+    "warmup_max_tokens": 1024,
+    "gate_timeout_seconds": 180,
+    "gate_max_tokens": 1024,
+    "warmup_agent": {
+      "tool_schema_policy": "stable",
+      "close_out_reserve": false
+    },
+    "gate_agent": {
+      "tool_schema_policy": "stable",
+      "close_out_reserve": false
+    }
+  },
+  "budgets": {
+    "fit-probe": {
+      "timeout_seconds": 180,
+      "max_turns": 16,
+      "max_tokens": 2048
+    },
+    "main-screen": {
+      "timeout_seconds": 300,
+      "max_turns": 16,
+      "max_tokens": 3072
+    }
+  },
+  "policy": {
+    "warm_weights": true,
+    "warm_task_scored": false,
+    "clear_prompt_cache_between_attempts": true,
+    "preserve_prefix_cache_within_task": true,
+    "one_server_one_attempt": true,
+    "counterbalance": true,
+    "verification_outside_model_worktree": true,
+    "fail_closed_oracle": true,
+    "pending_validation_is_not_pass": true,
+    "backend_note": "Dense Qwen3.8 is a quality comparator, not a speed expectation. The fit probe uses the current Qwen llama.cpp flags at 8K with speculation off; ngram is a later, separately selected profile. The local GGUF is identified by its file hash because the source revision was not preserved."
+  },
+  "experiments": [
+    {
+      "id": "QWEN38-LOCAL-8K-REAL",
+      "hypothesis": "The local dense Qwen3.8 GSQ-RCO IQ3_XXS GGUF can load at 8K and complete native Go CLI gates plus one verified real-repository repair without critical pressure.",
+      "budget": "fit-probe",
+      "server_profile": "fit-8192",
+      "tasks": [
+        "immer-array-push-fix"
+      ],
+      "seeds": [
+        42
+      ],
+      "agent": {
+        "tool_schema_policy": "stable",
+        "close_out_reserve": false
+      },
+      "scored": true,
+      "gate": "native-tool-and-verified-repair-fit-probe"
+    },
+    {
+      "id": "QWEN38-LOCAL-8K-SCREEN",
+      "hypothesis": "After a normal-pressure verified repair, the same dense Qwen3.8 profile provides a useful quality comparator across the four prepared real-repository tasks.",
+      "budget": "main-screen",
+      "server_profile": "screen-8192",
+      "tasks": [
+        "permissions-cache",
+        "job-queue",
+        "immer-array-push-fix",
+        "zod-int-json-schema"
+      ],
+      "seeds": [
+        42,
+        31415
+      ],
+      "agent": {
+        "tool_schema_policy": "stable",
+        "close_out_reserve": false
+      },
+      "scored": true,
+      "requires": "evidence-selected",
+      "gate": "native-tool-and-verified-repair-screen",
+      "depends_on": [
+        {
+          "experiment_id": "QWEN38-LOCAL-8K-REAL",
+          "condition": "verified_repair_no_pressure"
+        }
+      ]
+    },
+    {
+      "id": "QWEN38-LOCAL-8K-NGRAM",
+      "hypothesis": "After the complete no-speculation screen, ngram-simple improves end-to-end generation time without losing native tool validity, verified repairs, or memory headroom on dense Qwen3.8.",
+      "budget": "main-screen",
+      "server_profile": "screen-8192-ngram",
+      "tasks": [
+        "permissions-cache",
+        "job-queue",
+        "immer-array-push-fix",
+        "zod-int-json-schema"
+      ],
+      "seeds": [
+        42,
+        31415
+      ],
+      "agent": {
+        "tool_schema_policy": "stable",
+        "close_out_reserve": false
+      },
+      "scored": true,
+      "requires": "evidence-selected",
+      "gate": "generation-share-and-quality",
+      "depends_on": [
+        {
+          "experiment_id": "QWEN38-LOCAL-8K-SCREEN",
+          "condition": "verified_repair_no_pressure",
+          "complete": true
+        }
+      ]
+    }
+  ]
+}
