@@ -87,8 +87,11 @@ func TestCLIEndToEnd(t *testing.T) {
 	}))
 	defer server.Close()
 	var stdout, stderr bytes.Buffer
+	// 20s clears minCloseOutReserve (10s): a shorter deadline made close_out_reserve
+	// strip "edit" after turn 1 (this test's fake server is near-instant, so the
+	// wall-clock budget only needs to clear the reserve floor, not real model latency).
 	exit := cli(context.Background(), []string{"--root", root, "--output", filepath.Join(dir, "runs"), "--endpoint", server.URL + "/v1",
-		"--prompt", "Fix the sum fixture", "--timeout", "5s"}, &stdout, &stderr)
+		"--prompt", "Fix the sum fixture", "--timeout", "20s"}, &stdout, &stderr)
 	if exit != 0 {
 		t.Fatalf("exit %d: %s\n%s", exit, stdout.String(), stderr.String())
 	}
@@ -290,6 +293,52 @@ func TestBannedToolClearsAfterOneTurn(t *testing.T) {
 	result := runAgent(context.Background(), config(), "task", &Client{URL: server.URL, HTTP: server.Client()}, tools, &Trace{Writer: trace})
 	if result.Status != "completed" {
 		t.Fatalf("got %+v", result)
+	}
+}
+
+// TestUndeclaredToolCallAfterForceEditWindow reproduces a failure observed against a
+// real third-party backend (Mference): once force_edit_window narrows the declared
+// tools to edit-only, the backend did not enforce that server-side and the model kept
+// calling read/search anyway for five turns straight, silently defeating the whole
+// anti-stall mechanism. The client must catch this itself rather than trust the server.
+func TestUndeclaredToolCallAfterForceEditWindow(t *testing.T) {
+	tools, trace := newTools(t)
+	if err := os.WriteFile(filepath.Join(tools.Root.Name(), "a"), []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		var request Request
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+		}
+		if requests <= 5 {
+			// Five reads at distinct offsets: readsSinceEdit reaches forceEditAfterReads
+			// without ever tripping the identical-consecutive-call stall check.
+			reply(w, Message{ToolCalls: []ToolCall{call("read", fmt.Sprintf(`{"path":"a","offset":%d}`, requests))}}, "tool_calls")
+			return
+		}
+		for _, tool := range request.Tools {
+			if tool.Function.Name != "edit" {
+				t.Errorf("turn %d: force_edit_window should have narrowed tools to edit-only, got %+v", requests, request.Tools)
+			}
+		}
+		// Ignore the narrowed schema entirely, as an unenforcing backend would: keep
+		// calling read at a new offset both times, so this exercises the one-correction-
+		// then-fail-closed path rather than a single violation.
+		reply(w, Message{ToolCalls: []ToolCall{call("read", fmt.Sprintf(`{"path":"a","offset":%d}`, requests))}}, "tool_calls")
+	}))
+	defer server.Close()
+	result := runAgent(context.Background(), config(), "task", &Client{URL: server.URL, HTTP: server.Client()}, tools, &Trace{Writer: trace})
+	if result.Status != "malformed_tool_call" {
+		t.Fatalf("got %+v", result)
+	}
+	if requests != 7 {
+		t.Fatalf("expected exactly one corrective turn after the window opened (5 reads + 2 violations), got %d requests", requests)
+	}
+	if !strings.Contains(trace.String(), "undeclared_tool_call") {
+		t.Fatalf("trace missing undeclared_tool_call event: %s", trace.String())
 	}
 }
 

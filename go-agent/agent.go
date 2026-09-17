@@ -258,6 +258,8 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 		}
 		request := Request{Model: config.Model, Messages: messages, Tools: toolDefinitions(tools.SearchEnabled, tools.WriteEnabled), ToolChoice: "auto", MaxTokens: config.MaxTokens, Temperature: config.Temperature, TopP: config.TopP, TopK: config.TopK, MinP: config.MinP, PresencePenalty: config.PresencePenalty, RepeatPenalty: config.RepeatPenalty, Seed: config.Seed, CachePrompt: true}
 		dynamicToolSchema := config.ToolSchemaPolicy != "stable"
+		forceEditWindowActive := false
+		closeOutReserveActive := false
 		if dynamicToolSchema && readsSinceEdit >= forceEditAfterReads {
 			// Force-edit window: enough reads have happened with no edit that further reading is
 			// unlikely to be the missing ingredient (see forceEditAfterReads above). Remove read
@@ -272,6 +274,7 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 			}
 			if len(editOnly) > 0 {
 				request.Tools = editOnly
+				forceEditWindowActive = true
 				if err := trace.Event("force_edit_window", map[string]int{"reads_since_edit": readsSinceEdit}); err != nil {
 					result.Error = err.Error()
 					return
@@ -291,6 +294,7 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 			}
 			if len(withoutEdit) > 0 {
 				request.Tools = withoutEdit
+				closeOutReserveActive = true
 				if err := trace.Event("close_out_reserve", nil); err != nil {
 					result.Error = err.Error()
 					return
@@ -472,6 +476,33 @@ func runAgent(ctx context.Context, config Config, prompt string, client *Client,
 			result.Status = "protocol_error"
 			result.Error = "unsupported tool-call type"
 			return
+		}
+		if (forceEditWindowActive && call.Function.Name != "edit") || (closeOutReserveActive && call.Function.Name == "edit") {
+			// The model called a tool this turn's dynamic narrowing removed:
+			// read/search during the force-edit window, or edit during
+			// close-out reserve. Not every backend enforces the declared tool
+			// schema server-side -- some let the model call any tool it knows
+			// regardless of what was offered this turn, which would otherwise
+			// silently defeat these two anti-stall mechanisms (observed: an
+			// engine kept calling read/search for 5+ turns straight after
+			// force_edit_window narrowed the schema to edit-only). This is
+			// deliberately scoped to just these two cases -- it does not cover
+			// the per-turn repeat ban (bannedTool), which already has its own
+			// repeats-counter enforcement, or a genuinely unknown tool name,
+			// which dispatch already reports as an unknown-tool error.
+			if malformedRetries >= 1 {
+				result.Status = "malformed_tool_call"
+				result.Error = fmt.Sprintf("tool call to %q was not among the tools offered this turn", call.Function.Name)
+				return
+			}
+			malformedRetries++
+			messages = append(messages, Message{Role: "user", Content: fmt.Sprintf("%s is not available this turn. Reissue a call using only the tools offered in this turn's request.", call.Function.Name)})
+			if err := trace.Event("undeclared_tool_call", map[string]string{"tool": call.Function.Name}); err != nil {
+				result.Error = err.Error()
+				return
+			}
+			recordTurn()
+			continue
 		}
 		if call.ID == "" {
 			call.ID = fmt.Sprintf("call_%d", turn)
