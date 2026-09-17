@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "backend": "mference",
+  "candidate": {
+    "id": "mference-qwen36-4bit-16slot-feasibility",
+    "engine": "Mference",
+    "purpose": "single unlimited-time feasibility probe on a third streaming engine, after Edge0 (no tool-calling support at all) and Hebrus (HTTP 500 crash on a KV-cache-miss token-mismatch mid-conversation) both failed on infrastructure before reaching the repair task"
+  },
+  "model": {
+    "id": "qwen36-35b-a3b-mference-4bit-16slot",
+    "request_id": "qwen36-35b-a3b",
+    "path": "/tmp/mference-run/mference-src/scratch/qwen36.gturbo",
+    "repo": "mlx-community/Qwen3.6-35B-A3B-4bit",
+    "revision": "38740b847e4cb78f352aba30aa41c76e08e6eb46",
+    "format": "gturbo",
+    "quantization": "MLX affine 4-bit, group 64/128; INT8/BF16 routers"
+  },
+  "server": {
+    "backend": "mference",
+    "endpoint": "http://127.0.0.1:8127/v1",
+    "health_path": "/health",
+    "health_accept_status": 200,
+    "models_path": "/v1/models",
+    "binary": "/tmp/mference-run/mference-src/.build/release/MferenceServer",
+    "version_probe": ["/tmp/mference-run/mference-src/.build/release/MferenceServer", "--help"],
+    "host": "127.0.0.1",
+    "port": 8127,
+    "process_pattern": "MferenceServer.*--port 8127",
+    "common_flags": [],
+    "profiles": {
+      "default": {
+        "context_label": "16384-token context, forced 16-slot expert cache profile (MFERENCE_EXPERT_SLOTS=16 env var, not a CLI flag)",
+        "flags": []
+      }
+    },
+    "slot_cache_clear": {
+      "mode": "not_applicable",
+      "explanation": "Mference exposes no llama.cpp-style slot erase endpoint; prompt cache mode is single-prefix and is per-conversation, not per-attempt."
+    },
+    "drain": {
+      "mode": "not_applicable",
+      "poll_ms": 1000,
+      "timeout_ms": 60000,
+      "explanation": "Mference has no /slots idle endpoint."
+    }
+  },
+  "cli": {
+    "default_model": "qwen3.6-35b-a3b",
+    "main_timeout_seconds": 3600,
+    "control_timeout_seconds": 120,
+    "max_turns": 40,
+    "max_tokens": 3072,
+    "read_output_limit": 32768,
+    "search_output_limit": 32768,
+    "warmup_timeout_seconds": 180,
+    "warmup_max_tokens": 1024,
+    "gate_timeout_seconds": 180,
+    "gate_max_tokens": 1024,
+    "warmup_agent": {
+      "tool_schema_policy": "stable",
+      "close_out_reserve": false
+    },
+    "gate_agent": {
+      "tool_schema_policy": "stable",
+      "close_out_reserve": false
+    }
+  },
+  "budgets": {
+    "feasibility-probe": {
+      "timeout_seconds": 3600,
+      "max_turns": 40,
+      "max_tokens": 3072
+    }
+  },
+  "policy": {
+    "warm_weights": true,
+    "warm_task_scored": false,
+    "clear_prompt_cache_between_attempts": true,
+    "preserve_prefix_cache_within_task": true,
+    "one_server_one_attempt": true,
+    "counterbalance": false,
+    "verification_outside_model_worktree": true,
+    "fail_closed_oracle": true,
+    "pending_validation_is_not_pass": true,
+    "max_server_footprint_bytes": 3221225472,
+    "backend_note": "This is a feasibility probe, not a screen, same discipline as HEBRUS-QWEN36-FEASIBILITY-IMMER: no 300s budget, single seed, because prior scored attempts on every other engine truncated or crashed before finishing. Server is started externally (--external-server) rather than managed by the runner, because MferenceServer's request schema needed a local patch to accept go-agent's parallel_tool_calls=false (see benchmarks/optimization/mference-parallel-tool-calls.patch, applied to source commit 1eda4b3bbf654038630d13dc9a41bb80e78496a8 at github.com/joaoin0x/Mference); MferenceServer itself has no --version/--build-info output, so serverBinaryInfo's mference branch only checks the process starts (exit 0), and provenance is this commit hash plus the patch file. presence_penalty is not implemented by Mference at all (silently has no effect; Qwen's own recommended non-thinking value of 1.5 cannot be honored here) -- a known, accepted quality gap, not a bug to chase. MFERENCE_EXPERT_SLOTS=16 was set at server start to force the conservative ~1.45 GB slot profile; left on auto-detect, this exactly-16-GiB host would select the 32-slot profile based on total physical RAM, not the live ~3 GiB reclaimable memory actually measured. max_server_footprint_bytes matches the same 2026-09-17 measured live ceiling used for the Hebrus probe."
+  },
+  "experiments": [
+    {
+      "id": "MFERENCE-QWEN36-FEASIBILITY-IMMER",
+      "hypothesis": "Mference's default prompt-cache reuse (single-prefix) and fixed-size linear-attention state (no growing KV cache) let it complete a full agentic repair within the hour where Hebrus crashed on the second turn and Edge0 could not be tried at all.",
+      "budget": "feasibility-probe",
+      "server_profile": "default",
+      "tasks": [
+        "immer-array-push-fix"
+      ],
+      "seeds": [
+        42
+      ],
+      "agent": {
+        "tool_schema_policy": "stable",
+        "close_out_reserve": false,
+        "prompt_profile": "focused"
+      },
+      "scored": true,
+      "gate": "native-tool-and-verified-repair-fit-probe"
+    }
+  ]
+}

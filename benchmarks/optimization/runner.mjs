@@ -385,6 +385,12 @@ async function serverBinaryInfo(experiments) {
       ? result.code === 0 && version === expected
       : backend === "hebrus"
         ? result.code === 0 && (!experiments.server.commit_expected || text.includes(experiments.server.commit_expected))
+      : backend === "mference"
+        // MferenceServer's binary prints no version/commit string of its own
+        // (confirmed: --help exits 0 with usage text only). Provenance is
+        // instead the source git commit and applied local patch recorded in
+        // this config's server.commit_expected / policy.backend_note.
+        ? result.code === 0
       : result.code === 0 && build === expected.replace(/^b/i, "") && commit === experiments.server.commit_expected;
   return {
     binary: experiments.server.binary,

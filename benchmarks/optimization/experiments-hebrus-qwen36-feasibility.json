@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "backend": "hebrus",
+  "candidate": {
+    "id": "hebrus-qwen36-stable-affine4-ssd-cache321-feasibility",
+    "engine": "Hebrus",
+    "purpose": "single unlimited-time feasibility probe: can this engine/model/harness combination produce one verified real-repository repair at all, independent of the 300s screening budget that has truncated every prior attempt"
+  },
+  "model": {
+    "id": "qwen36-35b-a3b-hebrus-stable-affine4-g64",
+    "request_id": "qwen3.6-35b-a3b",
+    "path": "/tmp/hebrus-run/model/Qwen3.6-35B-A3B-Hebrus-ExpertMajor-v2-MLX-Affine4-G64.gguf",
+    "bytes": 20808566880,
+    "sha256": "dd17266185833a9f05531ce366fd7284ddca1ed64aa3dcf06e321e8c72c9ea3d",
+    "repo": "andreaborio/Qwen3.6-35B-A3B-Hebrus-GGUF",
+    "revision": "e002665becd2db618897effb213030fdf92e7e98",
+    "file": "Qwen3.6-35B-A3B-Hebrus-ExpertMajor-v2-MLX-Affine4-G64.gguf",
+    "format": "gguf",
+    "quantization": "ExpertMajor-v2 MLX Affine4 G64"
+  },
+  "server": {
+    "backend": "hebrus",
+    "endpoint": "http://127.0.0.1:8126/v1",
+    "health_path": "/v1/models",
+    "health_accept_status": 200,
+    "health_body_regex": "qwen3\\.6-35b-a3b",
+    "models_path": "/v1/models",
+    "props_path": "/props",
+    "binary": "/tmp/hebrus-run/hebrus-src/build/metal-arm64/bin/hebrus-server",
+    "version_probe": ["/tmp/hebrus-run/hebrus-src/build/metal-arm64/bin/hebrus-server", "--build-info"],
+    "commit_expected": "7600fe183325",
+    "host": "127.0.0.1",
+    "port": 8126,
+    "process_pattern": "hebrus-server.*--port 8126",
+    "common_flags": [
+      "--ssd-streaming",
+      "--ssd-streaming-cold",
+      "--ssd-streaming-cache-experts",
+      "321",
+      "--ctx",
+      "8192",
+      "-n",
+      "3072"
+    ],
+    "profiles": {
+      "fit-8192-cache321": {
+        "context_label": "8K benchmark context with the smallest complete 321-expert SSD cache tier",
+        "flags": []
+      }
+    },
+    "slot_cache_clear": {
+      "mode": "not_applicable",
+      "explanation": "Hebrus Qwen Chat Completions exposes no llama.cpp slot erase endpoint; the server has one serialized worker and no disk KV cache is enabled."
+    },
+    "drain": {
+      "mode": "not_applicable",
+      "poll_ms": 1000,
+      "timeout_ms": 60000,
+      "explanation": "Hebrus serializes inference and exposes no /slots idle endpoint."
+    }
+  },
+  "cli": {
+    "default_model": "qwen3.6-35b-a3b",
+    "main_timeout_seconds": 3600,
+    "control_timeout_seconds": 120,
+    "max_turns": 40,
+    "max_tokens": 3072,
+    "read_output_limit": 32768,
+    "search_output_limit": 32768,
+    "warmup_timeout_seconds": 180,
+    "warmup_max_tokens": 1024,
+    "gate_timeout_seconds": 180,
+    "gate_max_tokens": 1024,
+    "warmup_agent": {
+      "tool_schema_policy": "stable",
+      "close_out_reserve": false
+    },
+    "gate_agent": {
+      "tool_schema_policy": "stable",
+      "close_out_reserve": false
+    }
+  },
+  "budgets": {
+    "feasibility-probe": {
+      "timeout_seconds": 3600,
+      "max_turns": 40,
+      "max_tokens": 3072
+    }
+  },
+  "policy": {
+    "warm_weights": true,
+    "warm_task_scored": false,
+    "clear_prompt_cache_between_attempts": true,
+    "preserve_prefix_cache_within_task": false,
+    "one_server_one_attempt": true,
+    "counterbalance": false,
+    "verification_outside_model_worktree": true,
+    "fail_closed_oracle": true,
+    "pending_validation_is_not_pass": true,
+    "max_server_footprint_bytes": 3221225472,
+    "backend_note": "This is a feasibility probe, not a screen: it deliberately has no 300s time budget and no seed pair, because every prior scored attempt on this fixture (with either the baseline or focused prompt, at seed 42 or 31415) truncated before finishing. The only question this run answers is whether the engine/model/harness combination can produce one verified real-repository repair at all, given time. Do not compare its wall-clock or turn count against the 300s screening rows in DECISIONS.md; record it separately. max_server_footprint_bytes matches the 2026-09-17 measured live ceiling (3 GiB), not the 6 GiB or 16 GiB host previously assumed."
+  },
+  "experiments": [
+    {
+      "id": "HEBRUS-QWEN36-FEASIBILITY-IMMER",
+      "hypothesis": "Given enough turns and wall-clock time (not enough tokens/turns to complete before truncation was the limiting factor, not model incapacity), the same focused-prompt configuration that reached 5 tool calls / 235s before truncating on 2026-09-17 will complete and produce a verified Immer repair.",
+      "budget": "feasibility-probe",
+      "server_profile": "fit-8192-cache321",
+      "tasks": [
+        "immer-array-push-fix"
+      ],
+      "seeds": [
+        42
+      ],
+      "agent": {
+        "tool_schema_policy": "stable",
+        "close_out_reserve": false,
+        "prompt_profile": "focused"
+      },
+      "scored": true,
+      "gate": "native-tool-and-verified-repair-fit-probe"
+    }
+  ]
+}

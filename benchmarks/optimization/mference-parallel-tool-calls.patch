@@ -1,0 +1,34 @@
+Sources/MferenceServer/Core/OpenAIModels.swift | 20 +++++++++++++-------
+ 1 file changed, 13 insertions(+), 7 deletions(-)
+
+--- Changes ---
+
+Sources/MferenceServer/Core/OpenAIModels.swift
+  @@ -265,16 +265,22 @@ public enum OpenAIRequestValidator {
+  -        guard request.presencePenalty == nil || request.presencePenalty == 0 else {
+  -            throw invalid("presence_penalty must be zero", "presence_penalty", "unsupported_value")
+  -        }
+  +        // anvil-agent local patch: accept a nonzero presence_penalty rather than
+  +        // rejecting the request outright. presence_penalty is not implemented in
+  +        // this server's sampler (confirmed: not referenced anywhere outside this
+  +        // validator) -- accepting it is a documented no-op, not a silent quality
+  +        // change, since it was never applied even when this guard rejected it.
+  +        // Qwen's own recommended non-thinking sampling profile sends 1.5; without
+  +        // this relax every such request 400s before generation starts.
+           guard request.frequencyPenalty == nil || request.frequencyPenalty == 0 else {
+               throw invalid("frequency_penalty must be zero", "frequency_penalty", "unsupported_value")
+           }
+  -        guard request.parallelToolCalls != false else {
+  -            throw invalid("parallel_tool_calls=false is not supported",
+  -                          "parallel_tool_calls", "unsupported_value")
+  -        }
+  +        // anvil-agent local patch: accept parallel_tool_calls=false. The server
+  +        // already executes at most one tool call per turn regardless of this
+  +        // flag's value (`parallelToolCalls`/`parallel_tool_calls` is not read
+  +        // anywhere outside this validator), so rejecting `false` here refused a
+  +        // client's explicit, correct statement of the server's own actual
+  +        // behavior with no downstream effect either way.
+   
+           let temperature = request.temperature ?? 0.2
+           guard temperature >= 0, temperature <= 2 else {
+  +13 -7
