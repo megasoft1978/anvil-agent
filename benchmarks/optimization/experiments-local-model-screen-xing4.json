@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "backend": "llama",
+  "candidate": { "id": "xing-llama-xing4-29b-a4b-screen", "engine": "xing4 llama.cpp fork", "purpose": "single real-repository native-tool screen" },
+  "model": {
+    "id": "xing4-29b-a4b",
+    "request_id": "xing4-29b-a4b",
+    "path": "/Users/megasoft78/Desktop/Freelance/llm-memory-wall-research/models/gguf/xing4-29b-a4b/Xing4.0-29B-A4B-DYN-DIQ4XS-GU2XXS-Q8_0.gguf",
+    "bytes": 12930218944,
+    "format": "gguf",
+    "quantization": "DYN-DIQ4XS-GU2XXS-Q8_0"
+  },
+  "server": {
+    "backend": "llama",
+    "endpoint": "http://127.0.0.1:8124/v1",
+    "health_path": "/health",
+    "models_path": "/v1/models",
+    "props_path": "/props",
+    "binary": "/Users/megasoft78/src/xing-llama.cpp/build-mac/bin/llama-server",
+    "version_expected": "b1",
+    "commit_expected": "63c16fb",
+    "host": "127.0.0.1",
+    "port": 8124,
+    "process_pattern": "llama-server.*--port 8124",
+    "common_flags": ["-ngl", "99", "-fa", "on", "--no-warmup", "-np", "1", "--reasoning", "on", "--chat-template-kwargs", "{\"enable_thinking\":true}", "--jinja", "--offline", "-ub", "256", "-b", "256", "--cache-type-k", "q8_0", "--cache-type-v", "q8_0", "--slot-save-path", "/Users/megasoft78/.anvil-agent/slots/xing4-29b-a4b"],
+    "profiles": { "screen-4096": { "context": 4096, "spec_type": "none" } },
+    "slot_cache_clear": { "method": "POST", "path": "/slots/0?action=erase", "success_status": 200, "fallback": "stop-and-resume-before-next-attempt" },
+    "drain": { "poll_ms": 1000, "timeout_ms": 60000, "unknown_endpoint": "stop-before-next-attempt" },
+    "slots_path": "/slots"
+  },
+  "cli": {
+    "default_model": "xing4-29b-a4b",
+    "main_timeout_seconds": 900,
+    "control_timeout_seconds": 180,
+    "max_turns": 20,
+    "max_tokens": 4096,
+    "read_output_limit": 32768,
+    "search_output_limit": 32768,
+    "warmup_timeout_seconds": 180,
+    "warmup_max_tokens": 1024,
+    "gate_timeout_seconds": 180,
+    "gate_max_tokens": 1024,
+    "warmup_agent": { "tool_schema_policy": "stable", "close_out_reserve": false },
+    "gate_agent": { "tool_schema_policy": "stable", "close_out_reserve": false }
+  },
+  "budgets": { "quick": { "timeout_seconds": 900, "max_turns": 20, "max_tokens": 4096 } },
+  "policy": {
+    "max_server_footprint_bytes": 12884901888,
+    "warm_weights": true,
+    "warm_task_scored": false,
+    "clear_prompt_cache_between_attempts": true,
+    "preserve_prefix_cache_within_task": true,
+    "one_server_one_attempt": true,
+    "counterbalance": false,
+    "verification_outside_model_worktree": true,
+    "fail_closed_oracle": true,
+    "pending_validation_is_not_pass": true
+  },
+  "experiments": [{
+    "id": "XING4-LOCAL-QUICK-REAL",
+    "hypothesis": "Xing4 can use its custom llama.cpp fork and native tools to complete one objectively graded real-repository repair.",
+    "budget": "quick",
+    "server_profile": "screen-4096",
+    "tasks": ["qs-stringify-date-filter"],
+    "seeds": [42],
+    "agent": { "tool_schema_policy": "stable", "close_out_reserve": false },
+    "scored": true
+  }]
+}

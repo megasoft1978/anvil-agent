@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "experiment_id": "NEW-MODEL-REAL-REPAIR-SCREEN-V1",
+  "seed": 42,
+  "max_turns": 16,
+  "prompt_profile": "focused",
+  "preserve_tool_reasoning": false,
+  "tool_schema_policy": "stable",
+  "force_edit_after_reads": 5,
+  "close_out_reserve": false,
+  "retry_without_edit": false,
+  "max_history_bytes": 65536,
+  "task_reminder": false,
+  "rich_edit_feedback": true,
+  "ledger": true,
+  "dedup_reads": true,
+  "detect_repeated_edits": false
+}

@@ -47,6 +47,32 @@ These historical results were recorded on an Apple M1 Mac mini with 16 GiB unifi
 Future measurements use complete CLI tool-calling runs, with verified repairs, elapsed time,
 and peak memory reported together. See [the optimization handoff](docs/OPTIMIZATION-HANDOFF.md).
 
+### Local model screen — paused 2026-09-20
+
+The current local screen uses the same Go harness and external oracle on the
+same Apple M1/16 GiB machine. Prefill/decode are llama.cpp-reported tokens per
+second; quality is the oracle result; memory is peak server RSS and minimum
+free memory. The measurements are representative runs rather than a perfectly
+controlled benchmark because reasoning modes and tasks differ. The complete
+ledger, including excluded models and immutable artifact identities, is in the
+[local model summary](docs/LOCAL-MODEL-SUMMARY-2026-09-20.md) and [audit](docs/LOCAL-MODEL-AUDIT-2026-09-19.md).
+
+| Model | GGUF size | Quality result | Prefill / decode | Wall | Peak RSS / min free |
+|---|---:|---|---:|---:|---:|
+| **Qwen3-Coder 30B A3B** | 11.259 GB | QS + job queue passed; guarded Bash passed | 120.5 / 17.0 tok/s | 148 s | 8.77 GiB / 55 MB |
+| **Qwen3.6 27B A3B Coder** | 9.058 GB | Job queue passed 4/4; second task pending | 115.8 / 9.6 tok/s | 552 s | 8.43 GiB / 56 MB |
+| **Granite 4.2 3B** | 2.244 GB | 2/3 native repair tasks passed | 187.1 / 18.9 tok/s | 476 s | 3.86 GiB / 58 MB |
+| **Qwen3.5 4B** | 2.741 GB | Job queue passed; QS near-pass; Immer no edit | 175.6 / 12.6 tok/s | 202 s | 3.39 GiB / 64 MB |
+| **Ministral 3 14B** | 8.240 GB | QS passed; job queue failed | 58.7 / 5.9 tok/s | 230 s | 9.21 GiB / 56 MB |
+| **Ministral 3 8B** | 5.199 GB | QS near-pass; queue priority failed | 89.4 / 8.9 tok/s | 284 s | 6.20 GiB / 54 MB |
+| **Bonsai 2 27B** | 7.206 GB | Medium QS repair verified; low/xhigh too slow | ~30–31 / 3.3–4.6 tok/s | 1,800 s cap | ~8.7–8.8 GiB / 54–55 MB |
+| **Gemma 4 26B A4B** | 10.015 GB | Gates passed; scored repair pending | — | — | ~10.1 GiB / 57–61 MB |
+
+The current practical baseline is Qwen3-Coder 30B A3B: it is the fastest model
+with multiple verified repairs, while Qwen3.6 has now demonstrated a complete
+multi-file repair but at substantially higher latency. There are eight actual
+GGUF weights remaining, totaling 55,960,893,536 bytes (52.118 GiB).
+
 **Code-quality verdict, judged by Opus 5 itself** (given both models' diffs for 3 of the 9 scenarios,
 told explicitly which set was its own output, asked to be self-critical rather than favor itself):
 Opus 5's fixes were judged clearly better on two decisive points — `cart-checkout`'s stock-reservation

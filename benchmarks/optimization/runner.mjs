@@ -370,7 +370,8 @@ async function serverBinaryInfo(experiments) {
   const probe = experiments.server.version_probe ?? [experiments.server.binary, "--version"];
   const result = await command(probe);
   const text = `${result.stdout}\n${result.stderr}`.trim();
-  const match = text.match(/build\s+(\d+),\s+commit\s+([0-9a-f]+)/i);
+  const match = text.match(/build\s+(\d+),\s+commit\s+([0-9a-f]+)/i)
+    ?? text.match(/(?:^|\n)version:\s*(\d+)\s*\(([0-9a-f]+)\)/i);
   const build = match?.[1] ?? null;
   const commit = match?.[2] ?? null;
   const version = text.match(/(?:^|\n)Version:\s*([^\s]+)/i)?.[1]
@@ -967,10 +968,15 @@ function taskDescription(contractTask) {
   return task.report.replace(/\n?Test command:[\s\S]*$/i, "").trim();
 }
 
-function repairPrompt(report, sourceHints = []) {
+function repairPrompt(report, sourceHints = [], agent = {}) {
+  const bashMode = agent.bash_mode ?? "";
   const prompt = [
     "Repair the reported bug or bugs in the provided repository.",
-    "Use the native read, search, edit, and write tools to inspect and modify the source. Apply the complete repair; do not only explain the diagnosis.",
+    bashMode === "only"
+      ? "Use the Bash tool only to inspect and modify the source, then run the relevant existing checks. Apply the complete repair; do not only explain the diagnosis."
+      : bashMode === "guarded"
+        ? "Use the native read, search, edit, and write tools or the Bash tool to inspect and modify the source, then run the relevant existing checks. Apply the complete repair; do not only explain the diagnosis."
+        : "Use the native read, search, edit, and write tools to inspect and modify the source. Apply the complete repair; do not only explain the diagnosis.",
   ];
   if (sourceHints.length) prompt.push(`Start by reading the relevant source paths directly: ${sourceHints.map((file) => `\`${file}\``).join(", ")}.`);
   prompt.push("", report);
@@ -1725,6 +1731,8 @@ async function runCapabilityGates(sessionDir, experiments, contract, cliPath, se
   // forced the focused prompt for two gates, which made a gate failure ambiguous when the actual
   // experiment used the baseline prompt. A config may still opt into focused explicitly.
   const gateAgent = experiments.cli.gate_agent ?? { tool_schema_policy: "stable", close_out_reserve: false };
+  const bashOnly = gateAgent.bash_mode === "only";
+  const gateAction = bashOnly ? "Bash" : "native tools";
   const gateFingerprint = sha256(JSON.stringify({
     model: modelRequestID(experiments),
     backend: serverBackend(experiments),
@@ -1790,15 +1798,15 @@ async function runCapabilityGates(sessionDir, experiments, contract, cliPath, se
 
   const readRoot = mkdtempSync(path.join(sessionDir, "gate-read-"));
   writeFileSync(path.join(readRoot, "README.md"), "capability-read-marker\n", { mode: 0o600 });
-  await gate("gate-read-only", readRoot, "Read README.md and reply with the exact marker capability-read-marker. Do not edit any file.", false, async (result) => ({
+  await gate("gate-read-only", readRoot, `${bashOnly ? "Use Bash to read" : "Read"} README.md and reply with the exact marker capability-read-marker. Do not edit any file.`, false, async (result) => ({
     pass: result.process.code === 0 && result.summary?.status === "completed" && result.summary?.tool_calls >= 1 && result.summary?.edited_files?.length === 0 && result.summary.answer?.includes("capability-read-marker"),
     reason: "read-only gate requires one real tool call, the marker, and zero edits",
   }));
 
   const editRoot = mkdtempSync(path.join(sessionDir, "gate-edit-"));
   writeFileSync(path.join(editRoot, "sum.mjs"), "export function sum(a, b) { return a - b; }\n", { mode: 0o600 });
-  await gate("gate-edit", editRoot, "Fix sum.mjs so sum(a, b) returns a + b. Use the native edit tool, then finish.", true, async (result) => ({
-    pass: result.summary?.tool_calls >= 1 && result.summary?.edited_files?.includes("sum.mjs") && readFileSync(path.join(editRoot, "sum.mjs"), "utf8").includes("a + b"),
+  await gate("gate-edit", editRoot, `Fix sum.mjs so sum(a, b) returns a + b. Use the ${gateAction} to apply the edit, then finish.`, true, async (result) => ({
+    pass: result.summary?.tool_calls >= 1 && traceHasTool(result.trace ? parseTrace(result.trace) : [], bashOnly ? "bash" : "edit") && (bashOnly || result.summary?.edited_files?.includes("sum.mjs")) && readFileSync(path.join(editRoot, "sum.mjs"), "utf8").includes("a + b"),
     reason: "edit gate requires an applied native source edit; a missing final close-out response is recorded separately",
   }));
 
@@ -1810,13 +1818,13 @@ async function runCapabilityGates(sessionDir, experiments, contract, cliPath, se
   const writeGatePath = "write-capability.txt";
   const writeGateContent = "native write capability marker";
   const writeGatePrompt = [
-    `Use the native write tool exactly once to create the new file ${writeGatePath}.`,
+    `Use ${bashOnly ? "Bash" : "the native write tool"} exactly once to create the new file ${writeGatePath}.`,
     `Its complete content must be exactly: ${JSON.stringify(writeGateContent)}`,
     "Do not add quotes, a backslash, a literal n character, or any extra text.",
     "Do not read, search, edit, or explain. After the write, finish.",
   ].join("\n");
   await gate("gate-notify-write", notifyRoot, writeGatePrompt, true, async (result) => ({
-    pass: result.summary?.tool_calls >= 1 && traceHasTool(result.trace ? parseTrace(result.trace) : [], "write") && existsSync(path.join(notifyRoot, writeGatePath)) && readFileSync(path.join(notifyRoot, writeGatePath), "utf8") === writeGateContent,
+    pass: result.summary?.tool_calls >= 1 && traceHasTool(result.trace ? parseTrace(result.trace) : [], bashOnly ? "bash" : "write") && existsSync(path.join(notifyRoot, writeGatePath)) && readFileSync(path.join(notifyRoot, writeGatePath), "utf8") === writeGateContent,
     reason: "notify-channel gate requires one native write call that creates the exact marker file; a missing final close-out response is recorded separately",
   }));
   writeJSON(path.join(sessionDir, "capability-gates.json"), { completed_at: new Date().toISOString(), reused: false, server_profile: serverProfile, server_fingerprint: gateFingerprint, all_pass: gates.every((row) => row.gate_pass), gates });
@@ -1877,7 +1885,7 @@ async function runAttempt(attempt, sessionDir, experiments, contract, cliPath, s
   const configPath = path.join(runDir, "experiment-config.json");
   writeJSON(configPath, config);
   const report = contractTask.kind === "scenario" ? setup.scenario.report : setup.task.report.replace(/\n?[Tt]est command:[\s\S]*$/i, "").trim();
-  const prompt = repairPrompt(report, sourceHints);
+  const prompt = repairPrompt(report, sourceHints, experiment.agent ?? {});
   writeJSON(path.join(runDir, "attempt.json"), { attempt, execution_id: executionId, experiment, budget, task: attempt.task, prompt, cli: cliPath, server_pid: serverPid, server_profile: experiment.server_profile, server_args: serverArgs(experiments, experiment.server_profile), worktree, model: experiments.model, started_at: new Date().toISOString() });
   const activePath = path.join(sessionDir, "active", `${attempt.attempt_id}.json`);
   writeJSON(activePath, { attempt, execution_id: executionId, started_at: new Date().toISOString(), run_dir: runDir });

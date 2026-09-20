@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"syscall"
+	"time"
 	"unicode/utf8"
 )
 
@@ -21,11 +22,15 @@ const maxOutputBytes = 32 << 10
 
 type Tools struct {
 	Root              *os.Root
+	Worktree          string
 	Trace             *Trace
 	Edited            map[string]bool
 	SearchEnabled     bool
 	WriteEnabled      bool
 	ReadDisabled      bool
+	BashMode          string
+	Validation        *ValidationPlan
+	AutoValidate      bool
 	RichEditFeedback  bool
 	ReadOutputLimit   int
 	SearchOutputLimit int
@@ -154,12 +159,66 @@ func (t *Tools) Execute(ctx context.Context, call ToolCall) (any, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if t.BashMode == "only" && call.Function.Name != "bash" {
+		return nil, fmt.Errorf("only the bash tool is enabled in bash-only mode")
+	}
+	if t.BashMode == "" && call.Function.Name == "bash" {
+		return nil, fmt.Errorf("unknown tool %q (bash is disabled for this run)", call.Function.Name)
+	}
 	switch call.Function.Name {
+	case "bash":
+		if t.BashMode != "guarded" && t.BashMode != "only" {
+			return nil, fmt.Errorf("unknown tool %q (bash is disabled for this run)", call.Function.Name)
+		}
+		var args struct {
+			Command        string `json:"command"`
+			TimeoutSeconds *int   `json:"timeout_seconds"`
+		}
+		if err := decodeArguments(call.Function.Arguments, &args); err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(args.Command) == "" {
+			return nil, fmt.Errorf("command must be non-empty")
+		}
+		timeout := 30
+		if args.TimeoutSeconds != nil {
+			timeout = *args.TimeoutSeconds
+		}
+		if timeout < 1 || timeout > 120 {
+			return nil, fmt.Errorf("timeout_seconds must be between 1 and 120")
+		}
+		result, err := runBashCommand(ctx, t.Worktree, args.Command, time.Duration(timeout)*time.Second)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{
+			"command":   args.Command,
+			"exit_code": result.ExitCode,
+			"output":    result.Output,
+			"truncated": result.Truncated,
+			"timed_out": result.TimedOut,
+			"wall_ms":   result.WallMS,
+		}, nil
 	case "search":
 		if !t.SearchEnabled || t.ReadDisabled {
 			return nil, fmt.Errorf("search is not enabled")
 		}
 		return t.search(ctx, call.Function.Arguments)
+	case "validate":
+		if t.Validation == nil || len(t.Validation.Checks) == 0 {
+			return nil, fmt.Errorf("no validation checks were discovered for this worktree")
+		}
+		var args struct {
+			Kind string `json:"kind"`
+		}
+		if err := decodeArguments(call.Function.Arguments, &args); err != nil {
+			return nil, err
+		}
+		check, ok := t.Validation.Checks[args.Kind]
+		if !ok {
+			return nil, fmt.Errorf("validation check %q is unavailable; choose one of %s", args.Kind, strings.Join(t.Validation.kinds(), ", "))
+		}
+		return t.runValidation(ctx, check)
 	case "read":
 		if t.ReadDisabled {
 			return nil, fmt.Errorf("read is disabled; use the complete source supplied in the task")
@@ -319,7 +378,7 @@ func (t *Tools) Execute(ctx context.Context, call ToolCall) (any, error) {
 		if t.RichEditFeedback {
 			result["current_context"] = lineWindow(after, strings.Index(after, *args.NewText), editContextLines)
 		}
-		return result, nil
+		return t.attachAutomaticValidation(ctx, result)
 	case "write":
 		if !t.WriteEnabled {
 			return nil, fmt.Errorf("unknown tool %q", call.Function.Name)
@@ -366,9 +425,34 @@ func (t *Tools) Execute(ctx context.Context, call ToolCall) (any, error) {
 		if err := t.Trace.Event("write", map[string]any{"path": args.Path, "content": args.Content}); err != nil {
 			return nil, err
 		}
-		return map[string]any{"path": args.Path, "created": true, "bytes": len(args.Content),
-			"content_sha256": fmt.Sprintf("%x", sha256.Sum256([]byte(args.Content)))}, nil
+		result := map[string]any{"path": args.Path, "created": true, "bytes": len(args.Content),
+			"content_sha256": fmt.Sprintf("%x", sha256.Sum256([]byte(args.Content)))}
+		return t.attachAutomaticValidation(ctx, result)
 	default:
 		return nil, fmt.Errorf("unknown tool %q", call.Function.Name)
 	}
+}
+
+func (t *Tools) attachAutomaticValidation(ctx context.Context, result map[string]any) (any, error) {
+	if !t.AutoValidate || t.Validation == nil {
+		return result, nil
+	}
+	var check ValidationCheck
+	found := false
+	for _, kind := range []string{"test", "diagnostics", "typecheck", "build", "lint"} {
+		if candidate, ok := t.Validation.Checks[kind]; ok {
+			check = candidate
+			found = true
+			break
+		}
+	}
+	if !found {
+		return result, nil
+	}
+	validation, err := t.runValidation(ctx, check)
+	if err != nil {
+		return nil, err
+	}
+	result["validation"] = validation
+	return result, nil
 }

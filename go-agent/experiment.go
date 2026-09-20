@@ -27,11 +27,13 @@ type experimentOverrides struct {
 	ReadOutputLimit       *int     `json:"read_output_limit,omitempty"`
 	SearchOutputLimit     *int     `json:"search_output_limit,omitempty"`
 	MaxHistoryBytes       *int     `json:"max_history_bytes,omitempty"`
+	CompactHistory        *bool    `json:"compact_history,omitempty"`
 	TaskReminder          *bool    `json:"task_reminder,omitempty"`
 	RichEditFeedback      *bool    `json:"rich_edit_feedback,omitempty"`
 	Ledger                *bool    `json:"ledger,omitempty"`
 	DedupReads            *bool    `json:"dedup_reads,omitempty"`
 	DetectRepeatedEdits   *bool    `json:"detect_repeated_edits,omitempty"`
+	BashMode              string   `json:"bash_mode,omitempty"`
 }
 
 func applyExperimentOverrides(config *Config, raw []byte) error {
@@ -108,6 +110,9 @@ func applyExperimentOverrides(config *Config, raw []byte) error {
 		}
 		config.MaxHistoryBytes = *overrides.MaxHistoryBytes
 	}
+	if overrides.CompactHistory != nil {
+		config.CompactHistory = *overrides.CompactHistory
+	}
 	if overrides.TaskReminder != nil {
 		config.TaskReminder = *overrides.TaskReminder
 	}
@@ -122,6 +127,12 @@ func applyExperimentOverrides(config *Config, raw []byte) error {
 	}
 	if overrides.DetectRepeatedEdits != nil {
 		config.DetectRepeatedEdits = *overrides.DetectRepeatedEdits
+	}
+	if overrides.BashMode != "" {
+		if overrides.BashMode != "guarded" && overrides.BashMode != "only" {
+			return fmt.Errorf("unsupported bash_mode %q", overrides.BashMode)
+		}
+		config.BashMode = overrides.BashMode
 	}
 	return nil
 }

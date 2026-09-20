@@ -13,7 +13,11 @@ a malformed response, not by which model is declared.
 The loop sends OpenAI-compatible chat requests with `tool_choice: "auto"` and
 `parallel_tool_calls: false`. It executes one tool at a time and finishes on an ordinary text reply.
 There is no `done` tool and no forced grammar. Requests are non-streaming in this version; recovery
-cannot stop a model's generation loop early. Live quality and speed are not yet established.
+cannot stop a model's generation loop early. When the request history reaches its byte ceiling, the
+default deterministic compactor preserves the task, a bounded action ledger, and the newest complete
+tool turns instead of failing immediately; the trace records every compaction and the run summary
+counts them. Exact source text remains available through `read`, and `compact_history=false` is
+available for an explicit control.
 
 ## Build and try one fixture
 
@@ -78,10 +82,14 @@ fresh fixture. Postmortem reports persist beside the trace; a postmortem pass is
 | `search` | `text`, optional `path` | Literal-text grep across the worktree (or one file/directory), skipping `.git`/`node_modules`/build output and binary files. Enabled by default. |
 
 File tools use `os.Root` to reject paths and symlinks outside the selected worktree. They accept UTF-8
-regular files up to 1 MiB. There is deliberately no tool for arbitrary shell commands: this harness
-is scoped to controlled coding experiments, not an open-ended shell. Use disposable worktrees and
-run trusted verification commands outside the model loop. Test stdout/stderr is capped at 32 KiB;
-process groups are killed at the command deadline so a watch process or child cannot keep the run alive.
+regular files up to 1 MiB. Bash is disabled by default. A benchmark experiment may set
+`"bash_mode": "guarded"` to expose Bash alongside the native tools, or `"bash_mode": "only"` to
+test a Bash-only action space. Bash commands run from the selected worktree with bounded time and
+output, a sanitized environment, and conservative blocks for network access, package installation,
+credential access, and destructive repository/system operations. This is a guardrail for disposable
+local experiments, not a security sandbox: use a disposable worktree and never treat it as a
+boundary around untrusted commands. Test stdout/stderr is capped at 32 KiB; process groups are
+killed at the command deadline so a watch process or child cannot keep the run alive.
 
 On text completion, `completed` means only that the model supplied a final reply. It does not claim
 that a repository test passed. For measured real-repo results, run the trusted verifier separately

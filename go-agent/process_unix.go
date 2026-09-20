@@ -46,7 +46,15 @@ func runCommand(parent context.Context, dir string, argv []string, timeout time.
 	defer cancel()
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "CI=1")
+	cmd.Env = append(os.Environ(),
+		"CI=1",
+		"NO_COLOR=1",
+		"npm_config_audit=false",
+		"npm_config_fund=false",
+		"npm_config_update_notifier=false",
+		"npm_config_offline=true",
+		"HUSKY=0",
+	)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.WaitDelay = time.Second
 	cmd.Cancel = func() error {

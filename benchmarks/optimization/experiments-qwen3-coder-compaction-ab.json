@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "backend": "llama",
+  "candidate": {
+    "id": "llama.cpp-qwen3-coder-30b-a3b-q2k-compaction-ab",
+    "engine": "llama.cpp",
+    "purpose": "controlled real-repository A/B of deterministic history compaction"
+  },
+  "model": {
+    "id": "qwen3-coder-30b-a3b",
+    "request_id": "qwen3-coder-30b-a3b",
+    "path": "/Users/megasoft78/Desktop/Freelance/llm-memory-wall-research/models/gguf/qwen3-coder-30b-a3b/Qwen3-Coder-30B-A3B-Instruct-Q2_K.gguf",
+    "bytes": 11258612896,
+    "sha256": "6db9853d31fdb928a731666c9d44e8cdebf52f62f4810cb0908c6c677e6c84b5",
+    "repo": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF",
+    "file": "Qwen3-Coder-30B-A3B-Instruct-Q2_K.gguf",
+    "format": "gguf",
+    "quantization": "Q2_K",
+    "architecture": "qwen3moe",
+    "parameter_class": "30B total / 3B active MoE"
+  },
+  "server": {
+    "backend": "llama",
+    "endpoint": "http://127.0.0.1:8151/v1",
+    "health_path": "/health",
+    "models_path": "/v1/models",
+    "props_path": "/props",
+    "binary": "/opt/homebrew/bin/llama-server",
+    "version_expected": "b10809",
+    "commit_expected": "5266f24da",
+    "host": "127.0.0.1",
+    "port": 8151,
+    "process_pattern": "llama-server.*--port 8151",
+    "common_flags": ["-ngl", "99", "-fa", "on", "--no-warmup", "-np", "1", "--reasoning", "on", "--reasoning-effort", "low", "--jinja", "--offline", "-ub", "256", "-b", "256", "--cache-type-k", "q8_0", "--cache-type-v", "q8_0", "--slot-save-path", "/tmp/anvil-agent-qwen3-coder-compaction-slot"],
+    "profiles": { "screen-8192": { "context": 8192, "spec_type": "none" } },
+    "slot_cache_clear": { "method": "POST", "path": "/slots/0?action=erase", "success_status": 200, "fallback": "stop-and-resume-before-next-attempt" },
+    "drain": { "poll_ms": 1000, "timeout_ms": 60000, "unknown_endpoint": "stop-before-next-attempt" },
+    "slots_path": "/slots"
+  },
+  "cli": {
+    "default_model": "qwen3-coder-30b-a3b",
+    "main_timeout_seconds": 900,
+    "control_timeout_seconds": 180,
+    "max_turns": 20,
+    "max_tokens": 8192,
+    "read_output_limit": 32768,
+    "search_output_limit": 32768,
+    "warmup_timeout_seconds": 180,
+    "warmup_max_tokens": 1024,
+    "gate_timeout_seconds": 180,
+    "gate_max_tokens": 1024,
+    "warmup_agent": { "tool_schema_policy": "stable", "close_out_reserve": false },
+    "gate_agent": { "tool_schema_policy": "stable", "close_out_reserve": false }
+  },
+  "budgets": { "quick": { "timeout_seconds": 900, "max_turns": 20, "max_tokens": 8192 } },
+  "policy": {
+    "max_server_footprint_bytes": 12884901888,
+    "warm_weights": true,
+    "warm_task_scored": false,
+    "clear_prompt_cache_between_attempts": true,
+    "preserve_prefix_cache_within_task": true,
+    "one_server_one_attempt": true,
+    "counterbalance": false,
+    "verification_outside_model_worktree": true,
+    "fail_closed_oracle": true,
+    "pending_validation_is_not_pass": true
+  },
+  "experiments": [
+    {
+      "id": "QWEN3-CODER-COMPACTION-OFF-JOB-QUEUE",
+      "hypothesis": "The same strong model fails when the harness refuses to compact an intentionally tight history budget.",
+      "budget": "quick",
+      "server_profile": "screen-8192",
+      "tasks": ["job-queue"],
+      "seeds": [42],
+      "agent": { "tool_schema_policy": "stable", "close_out_reserve": false, "max_history_bytes": 16384, "compact_history": false },
+      "scored": true
+    },
+    {
+      "id": "QWEN3-CODER-COMPACTION-ON-JOB-QUEUE",
+      "hypothesis": "Deterministic history compaction preserves enough state for the strong model to complete the same real repair under the tight history budget.",
+      "budget": "quick",
+      "server_profile": "screen-8192",
+      "tasks": ["job-queue"],
+      "seeds": [42],
+      "agent": { "tool_schema_policy": "stable", "close_out_reserve": false, "max_history_bytes": 16384, "compact_history": true },
+      "scored": true
+    }
+  ]
+}

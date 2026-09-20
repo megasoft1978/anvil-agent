@@ -62,6 +62,7 @@ func cli(parent context.Context, argv []string, stdout, stderr io.Writer) int {
 		RecoverToolCalls:    true,
 		MaxTurns:            16,
 		MaxHistoryBytes:     64 << 10,
+		CompactHistory:      true,
 		ToolSchemaPolicy:    "dynamic",
 		ForceEditAfterReads: 5,
 		CloseOutReserve:     true,
@@ -189,7 +190,8 @@ func cli(parent context.Context, argv []string, stdout, stderr io.Writer) int {
 	}
 	defer traceFile.Close()
 	trace := &Trace{Writer: traceFile, Progress: stderr}
-	if err := trace.Event("run_start", map[string]any{"schema_version": 1, "config": config, "root": absRoot, "endpoint": *endpoint, "task_id": taskID, "prompt": *prompt, "timeout": timeout.String(), "go_version": runtime.Version()}); err != nil {
+	validation := detectValidationPlan(absRoot, *prompt)
+	if err := trace.Event("run_start", map[string]any{"schema_version": 1, "config": config, "root": absRoot, "endpoint": *endpoint, "task_id": taskID, "prompt": *prompt, "timeout": timeout.String(), "go_version": runtime.Version(), "validation": validation}); err != nil {
 		return fail(err)
 	}
 	ctx, cancel := context.WithTimeout(parent, *timeout)
@@ -197,7 +199,7 @@ func cli(parent context.Context, argv []string, stdout, stderr io.Writer) int {
 	client := &Client{URL: *endpoint, APIKey: os.Getenv("ANVIL_API_KEY"), HTTP: &http.Client{
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 	}}
-	tools := &Tools{Root: root, Trace: trace, Edited: map[string]bool{}, RichEditFeedback: config.RichEditFeedback, SearchEnabled: true, WriteEnabled: *write, ReadOutputLimit: config.ReadOutputLimit, SearchOutputLimit: config.SearchOutputLimit}
+	tools := &Tools{Root: root, Worktree: absRoot, Trace: trace, Edited: map[string]bool{}, RichEditFeedback: config.RichEditFeedback, SearchEnabled: true, WriteEnabled: *write, BashMode: config.BashMode, Validation: validation, AutoValidate: true, ReadOutputLimit: config.ReadOutputLimit, SearchOutputLimit: config.SearchOutputLimit}
 	sampler := startMemorySampler(*serverPID, 2*time.Second)
 	var result Summary
 	if *tui && isTerminal(stdout) {

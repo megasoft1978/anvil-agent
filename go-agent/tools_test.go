@@ -49,6 +49,34 @@ func TestFileTools(t *testing.T) {
 	}
 }
 
+func TestBashIsExplicitlyGatedAndBounded(t *testing.T) {
+	tools, _ := newTools(t)
+	tools.Worktree = tools.Root.Name()
+	if _, err := tools.Execute(context.Background(), call("bash", `{"command":"printf 'disabled'"}`)); err == nil || !strings.Contains(err.Error(), "unknown tool") {
+		t.Fatalf("default Bash gate changed: %v", err)
+	}
+
+	tools.BashMode = "guarded"
+	t.Setenv("ANVIL_API_KEY", "must-not-leak")
+	value, err := tools.Execute(context.Background(), call("bash", `{"command":"printf '%s|%s' \"$ANVIL_API_KEY\" \"$PWD\""}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := value.(map[string]any)
+	output, _ := result["output"].(string)
+	if result["exit_code"] != 0 || !strings.HasPrefix(output, "|") || strings.Contains(output, "must-not-leak") {
+		t.Fatalf("unexpected guarded Bash result: %+v", result)
+	}
+	if _, err := tools.Execute(context.Background(), call("bash", `{"command":"rm -f should-not-exist"}`)); err == nil {
+		t.Fatal("destructive Bash command accepted")
+	}
+
+	tools.BashMode = "only"
+	if _, err := tools.Execute(context.Background(), call("read", `{"path":"."}`)); err == nil || !strings.Contains(err.Error(), "bash-only") {
+		t.Fatalf("native tool was accepted in bash-only mode: %v", err)
+	}
+}
+
 func TestRichEditFeedback(t *testing.T) {
 	tools, _ := newTools(t)
 	tools.RichEditFeedback = true

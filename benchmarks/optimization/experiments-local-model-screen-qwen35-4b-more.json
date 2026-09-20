@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "backend": "llama",
+  "candidate": { "id": "llama.cpp-qwen35-4b-q4km-more-screen", "engine": "llama.cpp", "purpose": "compact coding/agent follow-up screen on a second repair task" },
+  "model": {
+    "id": "qwen35-4b",
+    "request_id": "qwen35-4b",
+    "path": "/Users/megasoft78/Desktop/Freelance/llm-memory-wall-research/models/gguf/qwen3.5-4b/Qwen3.5-4B-Q4_K_M.gguf",
+    "bytes": 2740937888,
+    "sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+    "repo": "unsloth/Qwen3.5-4B-GGUF",
+    "file": "Qwen3.5-4B-Q4_K_M.gguf",
+    "format": "gguf",
+    "quantization": "Q4_K_M",
+    "architecture": "qwen35",
+    "parameter_class": "4B multimodal"
+  },
+  "server": {
+    "backend": "llama",
+    "endpoint": "http://127.0.0.1:8125/v1",
+    "health_path": "/health",
+    "models_path": "/v1/models",
+    "binary": "/opt/homebrew/bin/llama-server",
+    "version_expected": "b10809",
+    "commit_expected": "5266f24da",
+    "host": "127.0.0.1",
+    "port": 8125,
+    "process_pattern": "llama-server.*--port 8125",
+    "common_flags": ["-ngl", "99", "-fa", "on", "--no-warmup", "-np", "1", "--reasoning", "on", "--reasoning-effort", "low", "--jinja", "--offline", "-ub", "256", "-b", "256", "--cache-type-k", "q8_0", "--cache-type-v", "q8_0", "--slot-save-path", "/Users/megasoft78/.anvil-agent/slots/qwen35-4b"],
+    "profiles": { "screen-16384": { "context": 16384, "spec_type": "none" } },
+    "slot_cache_clear": { "method": "POST", "path": "/slots/0?action=erase", "success_status": 200, "fallback": "stop-and-resume-before-next-attempt" },
+    "drain": { "poll_ms": 1000, "timeout_ms": 60000, "unknown_endpoint": "stop-before-next-attempt" },
+    "slots_path": "/slots"
+  },
+  "cli": {
+    "default_model": "qwen35-4b",
+    "main_timeout_seconds": 900,
+    "control_timeout_seconds": 180,
+    "max_turns": 20,
+    "max_tokens": 8192,
+    "read_output_limit": 32768,
+    "search_output_limit": 32768,
+    "warmup_timeout_seconds": 180,
+    "warmup_max_tokens": 1024,
+    "gate_timeout_seconds": 180,
+    "gate_max_tokens": 1024,
+    "warmup_agent": { "tool_schema_policy": "stable", "close_out_reserve": false },
+    "gate_agent": { "tool_schema_policy": "stable", "close_out_reserve": false }
+  },
+  "budgets": { "quick": { "timeout_seconds": 900, "max_turns": 20, "max_tokens": 8192 } },
+  "policy": {
+    "max_server_footprint_bytes": 12884901888,
+    "warm_weights": true,
+    "warm_task_scored": false,
+    "clear_prompt_cache_between_attempts": true,
+    "preserve_prefix_cache_within_task": true,
+    "one_server_one_attempt": true,
+    "counterbalance": false,
+    "verification_outside_model_worktree": true,
+    "fail_closed_oracle": true,
+    "pending_validation_is_not_pass": true
+  },
+  "experiments": [{
+    "id": "QWEN35-4B-LOCAL-MORE-REAL",
+    "hypothesis": "Qwen3.5-4B's near-pass on QS will generalize to a second native-tool repair task.",
+    "budget": "quick",
+    "server_profile": "screen-16384",
+    "tasks": ["job-queue"],
+    "seeds": [42],
+    "agent": { "tool_schema_policy": "stable", "close_out_reserve": false },
+    "scored": true
+  }]
+}

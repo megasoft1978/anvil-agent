@@ -1,9 +1,11 @@
 # Testing go-agent
 
 This project targets Qwen3.6-35B-A3B through an already-running local
-llama-server. The agent loop is deliberately limited to repository inspection
-and edits: it has no shell or test-execution tool. Verification commands run
-from Go test code outside the model-facing tool surface.
+llama-server. The agent loop defaults to repository inspection and edits with
+no shell tool. Verification commands run from Go test code outside the
+model-facing tool surface. Bash is available only when an experiment explicitly
+sets `bash_mode` to `guarded` or `only`; those runs still require disposable
+worktrees and are not a security sandbox.
 
 ## Offline checks
 

@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "backend": "llama",
+  "candidate": {
+    "id": "llama.cpp-prism-bonsai2-27b-pq2_0",
+    "engine": "llama.cpp (PrismML-Eng prism fork)",
+    "purpose": "ternary quant of the same Qwen3.8-27B base already screened (docs/OPTIMIZATION-QWEN38-2026-09-17.md), at less than half the footprint and with real headroom under this machine's Metal buffer ceiling"
+  },
+  "model": {
+    "id": "bonsai2-27b",
+    "request_id": "bonsai2-27b",
+    "path": "/Users/megasoft78/Desktop/Freelance/llm-memory-wall-research/models/gguf/bonsai2-27b/Ternary-Bonsai-2-27B-PQ2_0.gguf",
+    "bytes": 7206168928,
+    "sha256": "3907dc1658db1f78a9826bf8d5bcb8dc65db0d466388937af57f2294fae62ec1",
+    "repo": "prism-ml/Ternary-Bonsai-2-27B-gguf",
+    "revision": null,
+    "revision_note": "sha256 verified via shasum against HuggingFace's x-linked-etag header (exact match); ftype metadata not used to identify the variant (see docs/OPTIMIZATION-QWEN38-2026-09-17.md, this file family's own metadata-labeling quirk).",
+    "file": "Ternary-Bonsai-2-27B-PQ2_0.gguf",
+    "format": "gguf",
+    "quantization": "ternary g128 PQ2_0 (2.16 bpw packed, 1.72 bpw true)",
+    "architecture": "qwen35",
+    "parameter_class": "27B dense (ternary), base Qwen3.8-27B",
+    "gguf_metadata_confirmed": {
+      "general.architecture": "qwen35",
+      "qwen35.context_length": 262144,
+      "qwen35.block_count": 64,
+      "general.sampling.temp": 1.0,
+      "general.sampling.top_p": 0.95,
+      "general.sampling.top_k": 20,
+      "note": "sampling.* is the GGUF's own embedded default; go-agent still sends explicit sampling params from profiles.go rather than relying on it."
+    }
+  },
+  "server": {
+    "backend": "llama",
+    "endpoint": "http://127.0.0.1:8118/v1",
+    "health_path": "/health",
+    "models_path": "/v1/models",
+    "props_path": "/props",
+    "binary": "/Users/megasoft78/src/prism-llama.cpp/build-mac/bin/llama-server",
+    "version_expected": "b10706",
+    "commit_expected": "1a07bfa5f",
+    "host": "127.0.0.1",
+    "port": 8118,
+    "process_pattern": "llama-server.*--port 8118",
+    "common_flags": [
+      "-ngl",
+      "99",
+      "-fa",
+      "on",
+      "--no-warmup",
+      "-np",
+      "1",
+      "--reasoning",
+      "on",
+      "--reasoning-format",
+      "deepseek",
+      "--reasoning-effort",
+      "xhigh",
+      "--jinja",
+      "--offline",
+      "-ub",
+      "256",
+      "-b",
+      "256",
+      "--cache-type-k",
+      "q8_0",
+      "--cache-type-v",
+      "q8_0",
+      "--slot-save-path",
+      "/Users/megasoft78/.anvil-agent/slots/bonsai2-27b"
+    ],
+    "profiles": {
+      "screen-32768": {
+        "context": 32768,
+        "spec_type": "none"
+      },
+      "screen-24576": {
+        "context": 24576,
+        "spec_type": "none"
+      },
+      "screen-16384": {
+        "context": 16384,
+        "spec_type": "none"
+      }
+    },
+    "slot_cache_clear": {
+      "method": "POST",
+      "path": "/slots/0?action=erase",
+      "success_status": 200,
+      "fallback": "stop-and-resume-before-next-attempt"
+    },
+    "drain": {
+      "poll_ms": 1000,
+      "timeout_ms": 60000,
+      "unknown_endpoint": "stop-before-next-attempt"
+    },
+    "slots_path": "/slots"
+  },
+  "cli": {
+    "default_model": "bonsai2-27b",
+    "main_timeout_seconds": 5400,
+    "control_timeout_seconds": 180,
+    "max_turns": 40,
+    "max_tokens": 8192,
+    "read_output_limit": 32768,
+    "search_output_limit": 32768,
+    "warmup_timeout_seconds": 300,
+    "warmup_max_tokens": 2048,
+    "gate_timeout_seconds": 300,
+    "gate_max_tokens": 2048,
+    "warmup_agent": {
+      "tool_schema_policy": "stable",
+      "close_out_reserve": false
+    },
+    "gate_agent": {
+      "tool_schema_policy": "stable",
+      "close_out_reserve": false
+    }
+  },
+  "budgets": {
+    "fit-probe": {
+      "timeout_seconds": 600,
+      "max_turns": 40,
+      "max_tokens": 4096
+    },
+    "main-screen": {
+      "timeout_seconds": 5400,
+      "max_turns": 40,
+      "max_tokens": 8192
+    }
+  },
+  "policy": {
+    "warm_weights": true,
+    "warm_task_scored": false,
+    "clear_prompt_cache_between_attempts": true,
+    "preserve_prefix_cache_within_task": true,
+    "one_server_one_attempt": true,
+    "counterbalance": true,
+    "verification_outside_model_worktree": true,
+    "fail_closed_oracle": true,
+    "pending_validation_is_not_pass": true,
+    "backend_note": "Ternary Bonsai 2 27B PQ2_0 is a ternary quant of the same Qwen3.8-27B base already screened at IQ3_XXS (docs/OPTIMIZATION-QWEN38-2026-09-17.md: 3 attempts, 0 fixes, 1 regression). Every published Bonsai 2 benchmark number is thinking mode at xhigh reasoning effort with temp 1.0/top_p 0.95/top_k 20 -- confirmed both by the whitepaper's evaluation-methodology section and by this GGUF's own embedded general.sampling.* metadata -- so this config runs thinking ON, unlike the qwen38-local config which forced --reasoning off. Requires the PrismML-Eng prism-branch llama.cpp fork; stock llama-server (b10809) cannot load ternary/Hadamard-rotated GGUFs. --reasoning-format deepseek routes thinking into message.reasoning_content, which go-agent/protocol.go already reads natively. Tool calls: the model's chat template emits <tool_call><function=name><parameter=x> XML; with --jinja the prism fork's server returns this as structured message.tool_calls (confirmed via the Bonsai-demo repo's TOOLS.md), and go-agent's recovery_qwenxml.go is an existing fallback parser for the same shape if any of it ever leaks into content as text."
+  },
+  "experiments": [
+    {
+      "id": "BONSAI2-LOCAL-32K-REAL",
+      "hypothesis": "Ternary Bonsai 2 27B PQ2_0, run in thinking mode at its own documented xhigh reasoning effort and sampling, fits fully GPU-resident at 32K context on this M1/16GB (real headroom versus the 24576-context ceiling measured for the larger Qwen3.8 IQ3_XXS) and can complete a native-tool-call, objectively-graded real-repair attempt on immer-array-push-fix.",
+      "budget": "fit-probe",
+      "server_profile": "screen-32768",
+      "tasks": [
+        "immer-array-push-fix"
+      ],
+      "seeds": [
+        42
+      ],
+      "agent": {
+        "tool_schema_policy": "stable",
+        "close_out_reserve": false
+      },
+      "scored": true,
+      "gate": "native-tool-and-verified-repair-fit-probe"
+    }
+  ]
+}

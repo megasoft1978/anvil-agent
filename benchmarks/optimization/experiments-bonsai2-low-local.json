@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "backend": "llama",
+  "candidate": {
+    "id": "llama.cpp-prism-bonsai2-27b-pq2_0-low",
+    "engine": "llama.cpp (PrismML-Eng prism fork)",
+    "purpose": "Minimum-reasoning follow-up for Bonsai 2 27B across the complete prepared real-repository fixture set."
+  },
+  "model": {
+    "id": "bonsai2-27b",
+    "request_id": "bonsai2-27b",
+    "path": "/Users/megasoft78/Desktop/Freelance/llm-memory-wall-research/models/gguf/bonsai2-27b/Ternary-Bonsai-2-27B-PQ2_0.gguf",
+    "bytes": 7206168928,
+    "sha256": "3907dc1658db1f78a9826bf8d5bcb8dc65db0d466388937af57f2294fae62ec1",
+    "repo": "prism-ml/Ternary-Bonsai-2-27B-gguf",
+    "revision": "6ed5e12bf84b7a63069882c91dd9e9218647d17b",
+    "file": "Ternary-Bonsai-2-27B-PQ2_0.gguf",
+    "format": "gguf",
+    "quantization": "ternary g128 PQ2_0",
+    "architecture": "qwen35",
+    "parameter_class": "27B dense, base Qwen3.8-27B"
+  },
+  "server": {
+    "backend": "llama",
+    "endpoint": "http://127.0.0.1:8119/v1",
+    "health_path": "/health",
+    "models_path": "/v1/models",
+    "props_path": "/props",
+    "binary": "/Users/megasoft78/src/prism-llama.cpp/build-mac/bin/llama-server",
+    "version_expected": "b10706",
+    "commit_expected": "1a07bfa5f",
+    "host": "127.0.0.1",
+    "port": 8119,
+    "process_pattern": "llama-server.*--port 8119",
+    "common_flags": [
+      "-ngl", "99",
+      "-fa", "on",
+      "--no-warmup",
+      "-np", "1",
+      "--reasoning", "on",
+      "--reasoning-format", "deepseek",
+      "--reasoning-effort", "low",
+      "--jinja",
+      "--offline",
+      "-ub", "256",
+      "-b", "256",
+      "--cache-type-k", "q8_0",
+      "--cache-type-v", "q8_0",
+      "--slot-save-path", "/Users/megasoft78/.anvil-agent/slots/bonsai2-27b-low"
+    ],
+    "profiles": {
+      "screen-32768": { "context": 32768, "spec_type": "none" },
+      "screen-24576": { "context": 24576, "spec_type": "none" },
+      "screen-16384": { "context": 16384, "spec_type": "none" }
+    },
+    "slot_cache_clear": {
+      "method": "POST",
+      "path": "/slots/0?action=erase",
+      "success_status": 200,
+      "fallback": "stop-and-resume-before-next-attempt"
+    },
+    "drain": {
+      "poll_ms": 1000,
+      "timeout_ms": 60000,
+      "unknown_endpoint": "stop-before-next-attempt"
+    },
+    "slots_path": "/slots"
+  },
+  "cli": {
+    "default_model": "bonsai2-27b",
+    "main_timeout_seconds": 1800,
+    "control_timeout_seconds": 180,
+    "max_turns": 40,
+    "max_tokens": 8192,
+    "read_output_limit": 32768,
+    "search_output_limit": 32768,
+    "warmup_timeout_seconds": 300,
+    "warmup_max_tokens": 2048,
+    "gate_timeout_seconds": 300,
+    "gate_max_tokens": 2048,
+    "warmup_agent": { "tool_schema_policy": "stable", "close_out_reserve": false },
+    "gate_agent": { "tool_schema_policy": "stable", "close_out_reserve": false }
+  },
+  "budgets": {
+    "low-screen": {
+      "timeout_seconds": 1800,
+      "max_turns": 40,
+      "max_tokens": 8192
+    }
+  },
+  "policy": {
+    "max_server_footprint_bytes": 12884901888,
+    "warm_weights": true,
+    "warm_task_scored": false,
+    "clear_prompt_cache_between_attempts": true,
+    "preserve_prefix_cache_within_task": true,
+    "one_server_one_attempt": true,
+    "counterbalance": true,
+    "verification_outside_model_worktree": true,
+    "fail_closed_oracle": true,
+    "pending_validation_is_not_pass": true,
+    "backend_note": "This is the same verified Bonsai 2 PQ2_0 artifact and Prism server as the xhigh screen; the only intended model-serving change is --reasoning-effort low."
+  },
+  "experiments": [
+    {
+      "id": "BONSAI2-LOCAL-LOW-REAL",
+      "hypothesis": "At minimum reasoning effort, Bonsai 2 27B will reach edits quickly enough to complete and pass a broader native-tool real-repository screen, revealing whether the prior xhigh zero-edit result was primarily an effort-budget failure.",
+      "budget": "low-screen",
+      "server_profile": "screen-32768",
+      "tasks": [
+        "permissions-cache",
+        "job-queue",
+        "immer-array-push-fix",
+        "zod-int-json-schema",
+        "notify-channel",
+        "zod-memoizer-retention",
+        "qs-stringify-date-filter",
+        "zod-discriminated-union-defaulted-tags",
+        "immer-array-methods-noop-sharing",
+        "zod-prefault-undefined",
+        "undici-mockagent-global-fetch"
+      ],
+      "seeds": [42, 31415],
+      "agent": {
+        "tool_schema_policy": "stable",
+        "close_out_reserve": false
+      },
+      "scored": true
+    }
+  ]
+}

@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "backend": "llama",
+  "candidate": { "id": "llama.cpp-qwen3-8b-q4km-no-think-screen", "engine": "llama.cpp", "purpose": "Qwen3-8B reasoning-mode A/B with native tools" },
+  "model": {
+    "id": "qwen3-8b-no-think",
+    "request_id": "qwen3-8b-no-think",
+    "path": "/Users/megasoft78/Desktop/Freelance/llm-memory-wall-research/models/gguf/qwen3-8b/Qwen3-8B-Q4_K_M.gguf",
+    "bytes": 5027783488,
+    "sha256": "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785",
+    "repo": "Qwen/Qwen3-8B-GGUF",
+    "file": "Qwen3-8B-Q4_K_M.gguf",
+    "format": "gguf",
+    "quantization": "Q4_K_M",
+    "architecture": "qwen3",
+    "parameter_class": "8B"
+  },
+  "server": {
+    "backend": "llama",
+    "endpoint": "http://127.0.0.1:8132/v1",
+    "health_path": "/health",
+    "models_path": "/v1/models",
+    "props_path": "/props",
+    "binary": "/opt/homebrew/bin/llama-server",
+    "version_expected": "b10809",
+    "commit_expected": "5266f24da",
+    "host": "127.0.0.1",
+    "port": 8132,
+    "process_pattern": "llama-server.*--port 8132",
+    "common_flags": ["-ngl", "99", "-fa", "on", "--no-warmup", "-np", "1", "--reasoning", "off", "--jinja", "--offline", "-ub", "256", "-b", "256", "--cache-type-k", "q8_0", "--cache-type-v", "q8_0", "--slot-save-path", "/Users/megasoft78/.anvil-agent/slots/qwen3-8b-no-think"],
+    "profiles": {
+      "screen-8192": { "context": 8192, "spec_type": "none" },
+      "screen-16384": { "context": 16384, "spec_type": "none" }
+    },
+    "slot_cache_clear": { "method": "POST", "path": "/slots/0?action=erase", "success_status": 200, "fallback": "stop-and-resume-before-next-attempt" },
+    "drain": { "poll_ms": 1000, "timeout_ms": 60000, "unknown_endpoint": "stop-before-next-attempt" },
+    "slots_path": "/slots"
+  },
+  "cli": {
+    "default_model": "qwen3-8b-no-think",
+    "main_timeout_seconds": 900,
+    "control_timeout_seconds": 180,
+    "max_turns": 20,
+    "max_tokens": 8192,
+    "read_output_limit": 32768,
+    "search_output_limit": 32768,
+    "warmup_timeout_seconds": 180,
+    "warmup_max_tokens": 1024,
+    "gate_timeout_seconds": 180,
+    "gate_max_tokens": 1024,
+    "warmup_agent": { "tool_schema_policy": "stable", "close_out_reserve": false },
+    "gate_agent": { "tool_schema_policy": "stable", "close_out_reserve": false }
+  },
+  "budgets": { "quick": { "timeout_seconds": 900, "max_turns": 20, "max_tokens": 8192 } },
+  "policy": {
+    "max_server_footprint_bytes": 12884901888,
+    "warm_weights": true,
+    "warm_task_scored": false,
+    "clear_prompt_cache_between_attempts": true,
+    "preserve_prefix_cache_within_task": true,
+    "one_server_one_attempt": true,
+    "counterbalance": false,
+    "verification_outside_model_worktree": true,
+    "fail_closed_oracle": true,
+    "pending_validation_is_not_pass": true
+  },
+  "experiments": [{
+    "id": "QWEN3-8B-NO-THINK-LOCAL-QUICK-REAL",
+    "hypothesis": "Qwen3-8B's non-thinking mode will preserve native-tool competence while avoiding the thinking-mode no-edit stall.",
+    "budget": "quick",
+    "server_profile": "screen-16384",
+    "tasks": ["qs-stringify-date-filter"],
+    "seeds": [42],
+    "agent": { "tool_schema_policy": "stable", "close_out_reserve": false },
+    "scored": true
+  }]
+}

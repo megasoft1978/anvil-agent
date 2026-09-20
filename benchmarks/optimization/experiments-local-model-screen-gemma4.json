@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "backend": "llama",
+  "candidate": { "id": "llama.cpp-gemma4-26b-a4b-base-screen", "engine": "llama.cpp", "purpose": "single real-repository native-tool screen" },
+  "model": {
+    "id": "gemma4-26b-a4b-it-ud-iq2-m",
+    "request_id": "gemma4-26b-a4b-it-ud-iq2-m",
+    "path": "/Users/megasoft78/Desktop/Freelance/llm-memory-wall-research/models/gguf/gemma4-26b-a4b-base/gemma-4-26B-A4B-it-UD-IQ2_M.gguf",
+    "bytes": 10014755296,
+    "sha256": "3fe245f4436ab44c103291222e81c514e53ca382871b555df24fea11e36b3c3a",
+    "format": "gguf",
+    "quantization": "UD-IQ2_M"
+  },
+  "server": {
+    "backend": "llama",
+    "endpoint": "http://127.0.0.1:8123/v1",
+    "health_path": "/health",
+    "models_path": "/v1/models",
+    "props_path": "/props",
+    "binary": "/opt/homebrew/bin/llama-server",
+    "version_expected": "b10809",
+    "commit_expected": "5266f24da",
+    "host": "127.0.0.1",
+    "port": 8123,
+    "process_pattern": "llama-server.*--port 8123",
+    "common_flags": ["-ngl", "99", "-fa", "on", "--no-warmup", "-np", "1", "--reasoning", "off", "--jinja", "--offline", "-ub", "256", "-b", "256", "--ctx-checkpoints", "0", "--cache-ram", "0", "--slot-save-path", "/Users/megasoft78/.anvil-agent/slots/gemma4-26b-a4b-base"],
+    "profiles": { "screen-8192": { "context": 8192, "spec_type": "none" } },
+    "slot_cache_clear": { "method": "POST", "path": "/slots/0?action=erase", "success_status": 200, "fallback": "stop-and-resume-before-next-attempt" },
+    "drain": { "poll_ms": 1000, "timeout_ms": 60000, "unknown_endpoint": "stop-before-next-attempt" },
+    "slots_path": "/slots"
+  },
+  "cli": {
+    "default_model": "gemma4-26b-a4b-it-ud-iq2-m",
+    "main_timeout_seconds": 900,
+    "control_timeout_seconds": 180,
+    "max_turns": 20,
+    "max_tokens": 4096,
+    "read_output_limit": 32768,
+    "search_output_limit": 32768,
+    "warmup_timeout_seconds": 180,
+    "warmup_max_tokens": 1024,
+    "gate_timeout_seconds": 180,
+    "gate_max_tokens": 1024,
+    "warmup_agent": { "tool_schema_policy": "stable", "close_out_reserve": false },
+    "gate_agent": { "tool_schema_policy": "stable", "close_out_reserve": false }
+  },
+  "budgets": { "quick": { "timeout_seconds": 900, "max_turns": 20, "max_tokens": 4096 } },
+  "policy": {
+    "max_server_footprint_bytes": 12884901888,
+    "warm_weights": true,
+    "warm_task_scored": false,
+    "clear_prompt_cache_between_attempts": true,
+    "preserve_prefix_cache_within_task": true,
+    "one_server_one_attempt": true,
+    "counterbalance": false,
+    "verification_outside_model_worktree": true,
+    "fail_closed_oracle": true,
+    "pending_validation_is_not_pass": true
+  },
+  "experiments": [{
+    "id": "GEMMA4-LOCAL-QUICK-REAL",
+    "hypothesis": "The available Gemma4 artifact can use the stable native tool protocol to complete one objectively graded real-repository repair.",
+    "budget": "quick",
+    "server_profile": "screen-8192",
+    "tasks": ["qs-stringify-date-filter"],
+    "seeds": [42],
+    "agent": { "tool_schema_policy": "stable", "close_out_reserve": false },
+    "scored": true
+  }]
+}

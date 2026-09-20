@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "backend": "llama",
+  "candidate": {
+    "id": "llama.cpp-qwen36-27b-a3b-coder-iq2m-screen",
+    "engine": "llama.cpp",
+    "purpose": "screen Qwen3.6-27B-A3B-Coder IQ2_M on real-repository agent repairs"
+  },
+  "model": {
+    "id": "qwen36-27b-a3b-coder",
+    "request_id": "qwen36-27b-a3b-coder",
+    "path": "/Users/megasoft78/Desktop/Freelance/llm-memory-wall-research/models/gguf/qwen36-27b-coder/Qwen3.6-27B-A3B-Coder-IQ2_M.gguf",
+    "bytes": 9057902048,
+    "sha256": "830a23171e422782ab007c48fe490f9105bf5f52719254f483d4889086fd164c",
+    "repo": "ManniX-ITA/Qwen3.6-27B-A3B-Coder-MTP-GGUF",
+    "revision": "d32c4c040c7ad28f09c0315ee90a8e0514efc1cb",
+    "file": "Qwen3.6-27B-A3B-Coder-IQ2_M.gguf",
+    "format": "gguf",
+    "quantization": "IQ2_M",
+    "architecture": "qwen3moe",
+    "parameter_class": "27B total / 3B active MoE"
+  },
+  "server": {
+    "backend": "llama",
+    "endpoint": "http://127.0.0.1:8136/v1",
+    "health_path": "/health",
+    "models_path": "/v1/models",
+    "props_path": "/props",
+    "binary": "/opt/homebrew/bin/llama-server",
+    "version_expected": "b10809",
+    "commit_expected": "5266f24da",
+    "host": "127.0.0.1",
+    "port": 8136,
+    "process_pattern": "llama-server.*--port 8136",
+    "common_flags": ["-ngl", "99", "-fa", "on", "--no-warmup", "-np", "1", "--reasoning", "on", "--reasoning-effort", "medium", "--jinja", "--offline", "-ub", "256", "-b", "256", "--ctx-checkpoints", "0", "--cache-ram", "0", "--cache-type-k", "q8_0", "--cache-type-v", "q8_0", "--slot-save-path", "/Users/megasoft78/.anvil-agent/slots/qwen36-27b-a3b-coder"],
+    "profiles": { "screen-8192": { "context": 8192, "spec_type": "none" } },
+    "slot_cache_clear": { "method": "POST", "path": "/slots/0?action=erase", "success_status": 200, "fallback": "stop-and-resume-before-next-attempt" },
+    "drain": { "poll_ms": 1000, "timeout_ms": 60000, "unknown_endpoint": "stop-before-next-attempt" },
+    "slots_path": "/slots"
+  },
+  "cli": {
+    "default_model": "qwen36-27b-a3b-coder",
+    "main_timeout_seconds": 1200,
+    "control_timeout_seconds": 180,
+    "max_turns": 20,
+    "max_tokens": 8192,
+    "read_output_limit": 32768,
+    "search_output_limit": 32768,
+    "warmup_timeout_seconds": 180,
+    "warmup_max_tokens": 1024,
+    "gate_timeout_seconds": 180,
+    "gate_max_tokens": 1024,
+    "warmup_agent": { "tool_schema_policy": "stable", "close_out_reserve": false },
+    "gate_agent": { "tool_schema_policy": "stable", "close_out_reserve": false }
+  },
+  "budgets": { "quick": { "timeout_seconds": 1200, "max_turns": 20, "max_tokens": 8192 } },
+  "policy": {
+    "max_server_footprint_bytes": 12884901888,
+    "warm_weights": true,
+    "warm_task_scored": false,
+    "clear_prompt_cache_between_attempts": true,
+    "preserve_prefix_cache_within_task": true,
+    "one_server_one_attempt": true,
+    "counterbalance": false,
+    "verification_outside_model_worktree": true,
+    "fail_closed_oracle": true,
+    "pending_validation_is_not_pass": true
+  },
+  "experiments": [
+    {
+      "id": "QWEN36-27B-CODER-SCREEN-NATIVE-JOB-QUEUE",
+      "hypothesis": "Qwen3.6-27B-A3B-Coder's larger total capacity and coding-specialized checkpoint will complete the multi-file job-queue repair at bounded medium reasoning effort.",
+      "budget": "quick",
+      "server_profile": "screen-8192",
+      "tasks": ["job-queue"],
+      "seeds": [42],
+      "agent": { "tool_schema_policy": "stable", "close_out_reserve": false },
+      "scored": true
+    },
+    {
+      "id": "QWEN36-27B-CODER-SCREEN-NATIVE-QS",
+      "hypothesis": "The Qwen3.6-27B-A3B-Coder repair generalizes to the independent qs stringify/date filter task.",
+      "budget": "quick",
+      "server_profile": "screen-8192",
+      "tasks": ["qs-stringify-date-filter"],
+      "seeds": [42],
+      "agent": { "tool_schema_policy": "stable", "close_out_reserve": false },
+      "scored": true
+    }
+  ]
+}

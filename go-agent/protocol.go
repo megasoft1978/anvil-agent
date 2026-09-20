@@ -110,7 +110,14 @@ func (c *Client) Complete(ctx context.Context, input Request) (Response, error) 
 	return result, nil
 }
 
-func toolDefinitions(withSearch, withWrite bool) []ToolDefinition {
+// toolDefinitions preserves the original native-tool contract used by unit tests and by
+// callers that do not opt into shell access. Experiments that need Bash use the explicit
+// toolDefinitionsFor variant below.
+func toolDefinitions(withSearch, withWrite bool, plans ...*ValidationPlan) []ToolDefinition {
+	return toolDefinitionsFor(withSearch, withWrite, "", plans...)
+}
+
+func toolDefinitionsFor(withSearch, withWrite bool, bashMode string, plans ...*ValidationPlan) []ToolDefinition {
 	makeTool := func(name, description string, fields map[string]any, required ...string) ToolDefinition {
 		if required == nil {
 			required = []string{}
@@ -123,6 +130,13 @@ func toolDefinitions(withSearch, withWrite bool) []ToolDefinition {
 		return tool
 	}
 	str := func(description string) any { return map[string]any{"type": "string", "description": description} }
+	if bashMode == "only" {
+		return []ToolDefinition{makeTool("bash", "Run one bounded Bash command in the repository worktree. Use it to inspect files, make source edits, and run existing checks. Network access, package installation, and destructive repository operations are blocked.",
+			map[string]any{
+				"command":         str("Bash command to run from the repository root"),
+				"timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "maximum": 120, "description": "Optional command timeout; default 30 seconds"},
+			}, "command")}
+	}
 	editDescription := "Replace exactly one occurrence of oldText in an existing UTF-8 file. Read it first. Ambiguous matches are rejected."
 	if withWrite {
 		editDescription += " To create a new file instead, use write."
@@ -139,6 +153,26 @@ func toolDefinitions(withSearch, withWrite bool) []ToolDefinition {
 	if withWrite {
 		tools = append(tools, makeTool("write", "Create a NEW file with the given content, preserving every requested character including leading and trailing newlines. Fails if the file already exists -- use edit for existing files. Parent directories are created automatically from the path; there is no separate directory-creation step and no reason to write an empty placeholder file to make one.",
 			map[string]any{"path": str("Relative file path; must not already exist"), "content": str("Complete file content; preserve exact line endings, including any final newline")}, "path", "content"))
+	}
+	if len(plans) > 0 && plans[0] != nil && len(plans[0].Checks) > 0 {
+		plan := plans[0]
+		kinds := plan.kinds()
+		description := "Run an automatically discovered repository validation check and return structured pass/fail output, compiler diagnostics, and bounded command output. Choose one of: "
+		for i, kind := range kinds {
+			if i > 0 {
+				description += ", "
+			}
+			description += kind + " (" + plan.Checks[kind].Display + ")"
+		}
+		tools = append(tools, makeTool("validate", description,
+			map[string]any{"kind": map[string]any{"type": "string", "enum": kinds, "description": "Automatically discovered check to run"}}, "kind"))
+	}
+	if bashMode == "guarded" {
+		tools = append(tools, makeTool("bash", "Run one bounded Bash command in the repository worktree. Use it for focused inspection, source edits, or existing checks when the native tools are not convenient. Network access, package installation, and destructive repository operations are blocked.",
+			map[string]any{
+				"command":         str("Bash command to run from the repository root"),
+				"timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "maximum": 120, "description": "Optional command timeout; default 30 seconds"},
+			}, "command"))
 	}
 	return tools
 }
