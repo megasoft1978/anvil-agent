@@ -4,7 +4,7 @@
   "candidate": {
     "id": "mlx-lm-qwen35-9b-4bit",
     "engine": "MLX-LM",
-    "purpose": "smaller Apple-Silicon repair candidate after the Qwen3.6 resident fit stop"
+    "purpose": "smaller Apple-Silicon repair candidate for comparison with the current winner"
   },
   "model": {
     "id": "qwen35-9b-4bit-mlx",

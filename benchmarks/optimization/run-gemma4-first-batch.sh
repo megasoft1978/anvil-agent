@@ -28,10 +28,10 @@ if [ "${EXTERNAL_SERVER:-0}" = "1" ]; then
     exit 2
   fi
   node benchmarks/optimization/runner.mjs run --session "$SESSION" --cli "$CLI" \
-    --experiment GEMMA4-LOCAL-8K-REAL --external-server --server-pid "$SERVER_PID" --max-runs 1 || status=$?
+    --experiment GEMMA4-LOCAL-QUICK-REAL --external-server --server-pid "$SERVER_PID" --max-runs 1 || status=$?
 else
   node benchmarks/optimization/runner.mjs run --session "$SESSION" --cli "$CLI" \
-    --experiment GEMMA4-LOCAL-8K-REAL --start-server --max-runs 1 || status=$?
+    --experiment GEMMA4-LOCAL-QUICK-REAL --start-server --max-runs 1 || status=$?
 fi
 node benchmarks/optimization/runner.mjs summarize --session "$SESSION"
 exit "$status"

@@ -4,7 +4,7 @@
   "candidate": {
     "id": "llama.cpp-gemma4-26b-a4b-ud-iq2-m-attnq4k",
     "engine": "llama.cpp",
-    "purpose": "available local small-resident Gemma repair candidate after the Qwen3.6 fit stop"
+    "purpose": "available local small-resident Gemma repair candidate for comparison with the current winner"
   },
   "model": {
     "id": "gemma4-26b-a4b-it-ud-iq2-m-attnq4k",

@@ -7,29 +7,25 @@ Use `experiments-gemma4-algorithms.json` for a fresh session after selecting tha
 diffusion models, expert prefetch and joint cache allocation with explicit preparation gates.
 The existing first-fit session and defaults remain unchanged; do not execute the entire matrix.
 
-This directory contains the preparation and execution harness for Deliverable 0 in
-`docs/OPTIMIZATION-HANDOFF.md`. The runner is local and resumable. Each scored attempt starts the
+This directory contains the preparation and execution harness for the local model screen. The
+runner is local and resumable. Each scored attempt starts the
 compiled Go CLI against a fresh worktree, so the model selects and executes native `read`, `search`,
 `edit`, and `write` calls. Host verification runs in a separate copy after the CLI exits.
 
 The default configuration is the verified current local winner, Qwen3-Coder-30B-A3B Q2_K, through
-pinned `llama.cpp` in `experiments-local-model-screen-qwen3-coder.json`. The historical Qwen3.6
-configuration remains available explicitly with `--experiments experiments-llama-qwen36.json`.
-The fastest next fallback is the already available local Gemma 4
-attnQ4K GGUF in `experiments-gemma4-local.json`; the smaller-model fallback is prepared in
+pinned `llama.cpp` in `experiments-local-model-screen-qwen3-coder.json`.
+The fastest next fallback is the already screened local Gemma 4 IQ2_M GGUF in
+`experiments-local-model-screen-gemma4.json`; the smaller-model fallback is prepared in
 `experiments-qwen35-mlx.json`; it uses the installed MLX-LM 0.31.2 OpenAI-compatible server and a
-local Qwen3.5-9B 4-bit Safetensors tree. The closed TurboQuant study remains available explicitly
-with `--experiments experiments-turboquant.json` or its other saved configuration. The runner never
+local Qwen3.5-9B 4-bit Safetensors tree. The runner never
 downloads model weights or starts a server during `prepare` or `validate`; server startup is explicit
 with `run --start-server`. It records a manifest, one JSONL row per attempted run, per-turn
 measurements, one-second memory samples, per-run artifacts, and compact `DECISIONS.md` notes under
 `.optimization-results/`.
 
-The already resident dense Qwen3.8 GSQ-RCO IQ3_XXS comparator is prepared separately in
-`experiments-qwen38-local.json`. It uses the same Go CLI and llama.cpp build at 8K context, with a
-no-speculation fit probe followed by a no-speculation screen and a later ngram arm. Its 10.09 GB
-GGUF is outside this checkout and is locked by its recorded byte count and SHA-256; the source
-revision was not retained with the copied artifact.
+The dense Qwen3.8 GSQ-RCO IQ3_XXS comparator is retained as an archived configuration in
+`experiments-qwen38-local.json`. Its 10.09 GB GGUF is no longer in the active model inventory;
+the immutable hash and failure evidence are preserved in the dated Qwen3.8 report.
 
 The preparation pass leaves model-dependent validation pending. These build and manifest steps are safe
 to perform before memory is freed; they do not start a model server or run fixture checks. After a
@@ -49,19 +45,11 @@ preparation before the server can load it:
 
 ```sh
 node benchmarks/optimization/runner.mjs prepare --cli "$CLI" \
-  --experiments benchmarks/optimization/experiments-gemma4-local.json
+  --experiments benchmarks/optimization/experiments-local-model-screen-gemma4.json
 ```
 
-The prepared Gemma baseline is `GEMMA4-LOCAL-8K-REAL`. The configuration also contains two
-deferred one-task arms: `GEMMA4-LOCAL-DYNAMIC-8K-REAL` tests the existing dynamic tool-schema policy
-with close-out reserve disabled in both arms, and
-`GEMMA4-LOCAL-NO-EDIT-RETRY-8K-REAL` tests one oracle-free corrective turn after a no-edit final
-response. Run those arms only after the baseline has produced a verified repair under normal
-memory pressure; each starts a separate server invocation and is resumable from the same session.
-The dynamic policy includes a persistent edit-only window after five read/search calls until an
-edit is requested, plus the existing repeated-call tool ban. It is a policy comparison, not an
-isolated test of the five-read threshold. The September 15 correction requires a fresh prepared
-session; saved sessions retain their original configuration and must not be relabeled.
+The prepared Gemma baseline is `GEMMA4-LOCAL-QUICK-REAL`. It is retained as a capability-gate
+near-pass and should receive a scored repair only in a fresh session under normal memory pressure.
 
 To prepare the local dense comparator instead, use the same built CLI with its separate configuration:
 
@@ -138,7 +126,7 @@ The runner performs the unscored warm smoke and capability gates first, then res
 attempts from the same session:
 
 ```sh
-node benchmarks/optimization/runner.mjs run --session "$SESSION" --cli "$CLI" --experiment LLAMA-IQ2-8K-REAL --start-server
+node benchmarks/optimization/runner.mjs run --session "$SESSION" --cli "$CLI" --experiment QWEN3-CODER-30B-A3B-LOCAL-QUICK-REAL --start-server
 node benchmarks/optimization/runner.mjs summarize --session "$SESSION"
 ```
 
@@ -148,9 +136,10 @@ While a batch is running, poll a compact state view that does not read or print 
 node benchmarks/optimization/runner.mjs status --session "$SESSION"
 ```
 
-`LLAMA-IQ2-8K-REAL` is the first measurement unit. It contains one 180-second real repair attempt,
+`QWEN3-CODER-30B-A3B-LOCAL-QUICK-REAL` is the current baseline measurement unit. It contains one
+180-second real repair attempt,
 an unscored warm smoke, and three unscored capability gates. Startup, fixture validation, and grading
-remain part of the elapsed time. The local GGUF is about 11.52 GB on disk; peak RSS, wired/compressed
+remain part of the elapsed time. The local GGUF is about 11.26 GB on disk; peak RSS, wired/compressed
 memory, swap, pressure, and pageout behavior are machine-state dependent and must be measured with
 the host in its normal condition, not a freshly rebooted one. The memory guard stops after critical
 pressure, three successive one-second samples with increased swapouts, or the server's own dirty
@@ -172,16 +161,15 @@ node benchmarks/optimization/disk-report.mjs
 
 The unrelated FLUX Hugging Face cache has already been removed. Remaining cleanup candidates are old
 completed optimization sessions after their summaries are retained, and regenerable Yarn, Go-build,
-pnpm, and browser caches. Keep the TurboQuant model, the GGUF until its probe is complete, isolated
-runtimes, prepared fixtures, and rejected evidence while the screen is active; clearing disk caches
-does not lower resident model memory.
+pnpm, and browser caches. Keep active model weights, isolated runtimes, prepared fixtures, and
+rejected evidence while the screen is active; clearing disk caches does not lower resident model
+memory.
 
-The review package for Astra is [OPTIMIZATION-ASTRA-DECISION.md](../../docs/OPTIMIZATION-ASTRA-DECISION.md),
-[OPTIMIZATION-CODEX-GOAL.md](../../docs/OPTIMIZATION-CODEX-GOAL.md),
-[OPTIMIZATION-ASTRA-REVIEW.md](../../docs/OPTIMIZATION-ASTRA-REVIEW.md),
-[OPTIMIZATION-RESEARCH-2026-09-14.md](../../docs/OPTIMIZATION-RESEARCH-2026-09-14.md), and
-[OPTIMIZATION-ASTRA-PROMPT.md](../../docs/OPTIMIZATION-ASTRA-PROMPT.md). Do not send the raw JSONL
-traces unless Astra identifies a specific evidence gap.
+The current results are summarized in [LOCAL-MODEL-SUMMARY-2026-09-20.md](../../docs/LOCAL-MODEL-SUMMARY-2026-09-20.md),
+with immutable artifact and exclusion evidence in [LOCAL-MODEL-AUDIT-2026-09-19.md](../../docs/LOCAL-MODEL-AUDIT-2026-09-19.md).
+Recent model-specific investigations are recorded in [OPTIMIZATION-BONSAI2-2026-09-18.md](../../docs/OPTIMIZATION-BONSAI2-2026-09-18.md)
+and [OPTIMIZATION-QWEN38-2026-09-17.md](../../docs/OPTIMIZATION-QWEN38-2026-09-17.md).
+Do not send raw JSONL traces unless a specific evidence gap requires them.
 
 For a 16 GiB Mac mini, reboot immediately before a memory-sensitive batch, then close every other
 application and leave only the terminal running the documented command. A browser, IDE, desktop client,
@@ -202,10 +190,10 @@ externally owned server:
 
 ```sh
 /opt/homebrew/bin/llama-server \
-  -m /Users/megasoft78/Desktop/Freelance/llm-memory-wall-research/models/gguf/gemma4-26b-a4b/gemma-4-26B-A4B-it-UD-IQ2_M-attnQ4K.gguf \
+  -m /Users/megasoft78/Desktop/Freelance/llm-memory-wall-research/models/gguf/gemma4-26b-a4b-base/gemma-4-26B-A4B-it-UD-IQ2_M.gguf \
   -ngl 99 -fa on --no-warmup -np 1 --reasoning off --jinja --offline \
   -ub 256 -b 256 --ctx-checkpoints 0 --cache-ram 0 -c 8192 \
-  --spec-type none --host 127.0.0.1 --port 8116 &
+  --spec-type none --host 127.0.0.1 --port 8123 &
 SERVER_PID=$!
 ```
 
@@ -223,29 +211,11 @@ process has started, its `memory.jsonl` cannot capture the peak during weight al
 startup from a normal Terminal, or record a separate startup preflight, for decision-grade memory
 feasibility.
 
-Do not add `--evidence-approved` to `LLAMA-IQ2-8K-REAL`. Conditional experiments are blocked until
+Do not add evidence approval flags to a baseline experiment. Conditional experiments are blocked until
 two unused real-issue holdouts are frozen in `fixture-contract.json`, validated in the current
-session, and selected in `DECISIONS.md`. A server profile change requires a fresh invocation after the previous server is
-stopped or restarted consistently. Rerunning the same session resumes completed attempts and
-retries an interrupted active attempt from a fresh worktree.
-
-If E0 is memory-infeasible during startup, the first TurboQuant rescue arm is `E4`: it reduces the
-expert cache from 2 GB to 1 GB while preserving the model and Go CLI settings. Record the memory
-abort in `DECISIONS.md`, confirm the holdout validation, then run it as a separate server profile:
-
-```sh
-node benchmarks/optimization/runner.mjs run --session "$SESSION" --cli "$CLI" \
-  --experiment E4 --start-server --evidence-approved
-```
-
-The next ordered TurboQuant arms are E5 for mixed q8/q3 KV compression and E6 for two prefetch
-workers. Each changes one server profile and requires a fresh invocation after the previous server
-has stopped. `TQ-full` is the final full-inventory confirmation after the ordered screen.
-
-In the current session, E5 accepted its KV settings but failed the warm tool-call gate with a
-truncated unparsable tool call, so it produced no scored task. E6 reached critical memory pressure
-during warmup and was stopped by the runner before scoring. Preserve those aborts in the decision log;
-do not launch `TQ-full` or another 2 GB profile on the same 16 GiB host state.
+session, and selected in `DECISIONS.md`. A server profile change requires a fresh invocation after
+the previous server is stopped or restarted consistently. Rerunning the same session resumes
+completed attempts and retries an interrupted active attempt from a fresh worktree.
 
 For the MLX candidate, pending validations are the local model tree hash, MLX-LM runtime/version,
 chat-template/tool parser gate, fixture base/reference/invalid oracle checks, memory-valid capability

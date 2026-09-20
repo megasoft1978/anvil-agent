@@ -36,7 +36,7 @@ proves that each model passes the native gates. Gemma keeps its existing checkpo
 Select ONE arm from measured evidence, not all seven. Start with bounded output/prefix reuse when
 prefill dominates, ngram when copying/decode dominates, and Q8 when KV memory is material. A failed
 baseline closes this matrix for that candidate; use the existing smaller-model fallback order.
-The already prepared Qwen3.8 and Qwen3.6 ngram arms remain unchanged and retain their own gates.
+The already prepared comparator ngram arms remain unchanged and retain their own gates.
 
 ## Preparation and execution
 

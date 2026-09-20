@@ -1,8 +1,7 @@
 # Qwen3.8-27B GSQ-RCO — real-repair evaluation, 2026-09-17
 
-Continuation of the same-day Hebrus/Edge0/Mference/Qwen3.6 screen (see
-`OPTIMIZATION-QWEN36-HEBRUS-TURBOQUANT-2026-09-16.md` and the same-day session that
-preceded this doc). This document is the Qwen3.8-27B GSQ-RCO half of that evening's work,
+Continuation of the same-day local-model screen and the same-day session that preceded this
+document. This document is the Qwen3.8-27B GSQ-RCO half of that evening's work,
 using the tool-schema-enforcement fix landed in `go-agent/agent.go` earlier the same session
 (commit `236a62e`).
 
@@ -85,7 +84,7 @@ Server-reported `print_timing` across multiple turns of real repair attempts (IQ
   tokens observed.
 - Decode: **2.6–3.7 tok/s**, i.e. roughly 270–380 ms/token — this is a fully dense 27B model at
   IQ3, so the whole file is read every token; there is no MoE-style expert-skip lever available
-  to this family the way there was for Qwen3.6.
+  to this family in the earlier comparison arms.
 
 ## Three real attempts, three distinct outcomes, zero fixes
 
@@ -123,7 +122,7 @@ On this fixture, at this quant, with a context and memory budget that let it run
 completion (no truncation, no memory abort) at least once: **Qwen3.8-27B GSQ-RCO IQ3_XXS
 reliably produces plausible, confidently-stated, and incorrect fixes.** This is a materially
 different failure class from every other model/engine combination tested this week — Hebrus
-and Mference/Qwen3.6 failed on infrastructure (crashes, tool-schema violations, memory) before
+and the other comparison arms failed on infrastructure (crashes, tool-schema violations, memory) before
 ever reaching a real, complete attempt at the fix; Qwen3.8 completed clean attempts and still
 got the bug wrong, once while making it worse. The higher-precision IQ3_S quant, which might
 plausibly have diagnosed better, does not fit this hardware's Metal buffer ceiling at all.

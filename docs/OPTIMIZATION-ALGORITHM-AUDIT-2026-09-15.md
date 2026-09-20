@@ -4,13 +4,13 @@
 
 The first problem to solve is a normal-pressure model response fast enough to reach an edit.
 The current optimization screen does not justify building a new inference engine or promoting
-the agent's fixed read-count interventions. Keep the reviewed candidate order and stopping rules
-in `OPTIMIZATION-ASTRA-DECISION.md`. This audit adds source-level findings and a falsifiable
-algorithm design; it does not claim a working repair solution.
+the agent's fixed read-count interventions. Keep the current model-screen summary and stopping
+rules in `LOCAL-MODEL-SUMMARY-2026-09-20.md`. This audit adds source-level findings and a
+falsifiable algorithm design; it does not claim a working repair solution.
 
 ## Evidence revalidated on September 15
 
-The latest session, `20260915T092827090Z-b401994db269`, is a prepared Qwen3.6 session with empty
+The latest session, `20260915T092827090Z-b401994db269`, is a prepared comparison session with empty
 `runs.jsonl`, `turns.jsonl`, and `memory.jsonl`. It is not a new successful run. The two latest
 Gemma execution sessions still end at the cache-erasure failure and the warning-pressure gate.
 
@@ -72,9 +72,9 @@ and runner cache-counter extraction were corrected; no live benefit has been mea
 
 ## Follow-up: a concrete repeated-prefill cost
 
-The frozen E4 manifest and `cache-events.jsonl` explicitly record `--prompt-cache-size 0`,
-`--prompt-cache-bytes 0`, and no retained conversation cache. The current TurboQuant and Qwen3.5
-MLX experiment files also set `preserve_prefix_cache_within_task: false`. Consequently, stable
+The frozen comparison manifest and `cache-events.jsonl` explicitly record `--prompt-cache-size 0`,
+`--prompt-cache-bytes 0`, and no retained conversation cache. The current Qwen3.5 MLX experiment
+file also sets `preserve_prefix_cache_within_task: false`. Consequently, stable
 schemas do not by themselves buy prefix reuse in these configurations. Disabling cross-task
 reuse through a global cache-off setting also disables useful within-task reuse.
 
@@ -96,8 +96,8 @@ returns reused prompt tokens in `usage.prompt_tokens_details.cached_tokens`. Its
 [cache implementation](https://raw.githubusercontent.com/ml-explore/mlx-lm/v0.31.2/mlx_lm/models/cache.py)
 enforces entry and byte limits and reuses token prefixes; trimming a longer cache requires that the
 cache type support trimming. Thus hybrid-state rollback and the rendered tool-call token prefix
-must be checked, not assumed. These upstream sources do not prove the removed TurboQuant runtime's
-exact behavior or establish any local speedup.
+must be checked, not assumed. These upstream sources do not prove the retired runtime's exact
+behavior or establish any local speedup.
 
 Source inspection found that the runner ignored the MLX usage counter despite reading its parent
 object. `cache-metrics.mjs` now resolves the llama timing aliases and the MLX usage field, preserves
@@ -114,9 +114,9 @@ The first request cannot benefit from within-task reuse, so this alone cannot so
 prefill. A retained cache that increases paging can lose even when it saves many prompt tokens.
 
 The live follow-up still found warning pressure (level 2), with 4,393.25 MiB occupied swap.
-Both `/tmp/anvil-agent-opt` and `/tmp/anvil-turboquant-venv/bin/turboquant-serve` were absent.
-Rebuild/reprepare the selected Gemma path when its preflight can pass; do not interpret vanished
-temporary artifacts as a model failure or automatically reinstall the closed TurboQuant arm.
+The prior temporary runner and server artifacts were absent. Rebuild/reprepare the selected Gemma
+path when its preflight can pass; do not interpret vanished temporary artifacts as a model failure
+or automatically reinstall a retired comparison arm.
 
 ## Mathematical decision model
 

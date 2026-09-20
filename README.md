@@ -23,33 +23,13 @@ configuration that passed the strongest local repair screen.
 
 ## Benchmarks
 
-Bugs fixed across 9 realistic multi-file projects (React + Express + TypeScript), reported the way you'd
-actually describe them to a coding agent: by symptom, never by cause. Every model below was run
-**agentically** — real Read/Edit tools, no command execution in the loop, same 9 scenarios, same
-`benchmarks/grade.mjs` grader. It combines executable checks with source-pattern checks; the
-optimization plan reports these separately.
+The local screen uses the same Go harness, native Read/Search/Edit/Write tools, and external
+fixture oracles on an Apple M1 Mac mini with 16 GiB unified memory. Quality is reported as
+verified oracle behavior, alongside wall time, llama.cpp throughput, and peak memory. The
+complete ledger and immutable artifact identities are in the [local model summary](docs/LOCAL-MODEL-SUMMARY-2026-09-20.md)
+and [audit](docs/LOCAL-MODEL-AUDIT-2026-09-19.md).
 
-| Model | Bugs fixed | Notes |
-|---|---|---|
-| **Qwen3.6-35B-A3B-UD-IQ2_M** (historical local configuration, no longer shipped — real `go-agent` binary, Read/Edit tools, no test feedback, 16-turn cap, n=1) | 20/44 (45%) | 7 of 9 scenarios hit the 16-turn cap without finishing (1 of those, `notify-channel`, never made a single edit); only 2 of 9 reached `"completed"` on their own |
-| **claude-sonnet-5** (agentic, Claude Code, 2026-09-13) | 41/44 (93%) | avg ~77s wall-clock / ~61k tokens per scenario |
-| **claude-opus-5** (agentic, Claude Code, 2026-09-13) | 43/44 (98%) | avg ~34s wall-clock / ~50k tokens per scenario |
-
-The local model's biggest weakness here isn't understanding the bug — it's finishing: this quant tends to
-re-read files instead of committing to an edit, and burns its 16-turn budget before wrapping up. That
-matches the earlier measured runs documented in `go-agent/TESTING.md`
-finding the same "oscillates, never commits" pattern on other tasks. n=1 per scenario here (an agentic run
-costs far more than a single completion) — treat the exact number as directional, not a tight measurement.
-
-Sonnet's 3 misses: `cart-checkout`'s discount-before-tax ordering, and 2 of `realtime-sync`'s 6 bugs (the
-sender seeing its own broadcast edit, and the `opId`-collision case). Opus's 1 miss: that same
-`opId`-collision case — the one bug neither model fixed.
-
-These historical results were recorded on an Apple M1 Mac mini with 16 GiB unified memory.
-Future measurements use complete CLI tool-calling runs, with verified repairs, elapsed time,
-and peak memory reported together. See [the optimization handoff](docs/OPTIMIZATION-HANDOFF.md).
-
-### Local model screen — paused 2026-09-20
+### Current local model screen — paused 2026-09-20
 
 The current local screen uses the same Go harness and external oracle on the
 same Apple M1/16 GiB machine. Prefill/decode are llama.cpp-reported tokens per
@@ -75,20 +55,32 @@ with multiple verified repairs. The separate Qwen3.6-27B comparison also demonst
 a complete multi-file repair, but at substantially higher latency. There are eight actual
 GGUF weights remaining, totaling 55,960,893,536 bytes (52.118 GiB).
 
-**Code-quality verdict, judged by Opus 5 itself** (given both models' diffs for 3 of the 9 scenarios,
-told explicitly which set was its own output, asked to be self-critical rather than favor itself):
-Opus 5's fixes were judged clearly better on two decisive points — `cart-checkout`'s stock-reservation
-route only partially fixed a partial-reservation leak that Sonnet's fix left in place, and `realtime-sync`'s
-socket `send()` call that Sonnet left able to throw mid-reconnect. Sonnet's code also renamed a `drain()`
-function to no longer actually drain anything, a naming/behavior mismatch Opus avoided. Opus's fixes did
-carry some real scope creep (exponential backoff, a monotonic clock helper) beyond what was asked.
+### Direct assessment — GPT-5.6 Luna Max (2026-09-20)
 
-**Was the historical 45% score just the 2-bit quantization?** Partly, but this isn't a clean isolation — Qwen3.6-35B-A3B
-run here is both a much smaller model (3B active params per token, MoE) *and* quantized to ~2.5 bits/weight
-(IQ2_M), versus Sonnet/Opus at full precision and far larger scale. 2-bit-class quantization is well-
-documented to cause real, measurable quality loss on its own — so it's a plausible contributor to the gap —
-but nothing here isolates quantization from model scale. An unquantized Qwen3.6-35B-A3B run (not available
-locally) would be needed to actually separate those effects.
+I evaluated the recorded traces, native tool calls, external oracle outcomes, and memory logs
+directly. The evidence supports this assessment:
+
+- **Qwen3-Coder 30B A3B Q2_K is the current winner for this machine.** It completed two
+  independent repairs—`qs-stringify-date-filter` and the multi-file `job-queue` task—with
+  eight native tool calls per task and every external oracle check passing.
+- **The repairs were functionally precise, not merely plausible edits.** The Date repair covered
+  nested values, filter-produced Dates, comma-separated arrays, custom serialization, and invalid
+  Dates. The queue repair passed priority ordering, terminal-job idempotency, exponential backoff,
+  completion-time retention, and the remaining queue checks.
+- **Native tools should remain primary.** A guarded Bash retest also passed the queue oracle, but
+  Bash-only mode exhausted its turn budget. Bash is useful as a constrained supplement, not a
+  replacement for the structured read/search/edit loop.
+- **The practical limit is memory headroom.** The winner used roughly 8.4–8.8 GiB RSS and left
+  only about 55 MB of minimum free memory on this 16 GiB host. The low-reasoning, 8K profile is
+  usable, but cold-start conditions and everyday applications can change the result.
+- **Confidence is strong for the current baseline, not universal.** The winner has the best
+  combination of verified repair breadth and latency in the recorded screen, but the models were
+  not all run on an identical task/mode matrix. A common-task follow-up is still required before
+  claiming a statistically general ranking.
+
+The recommendation is therefore to keep Qwen3-Coder 30B A3B as the shipped default, keep Bash
+guarded and opt-in, and treat the remaining models as comparison or fallback candidates rather
+than replacing the current baseline.
 
 <details>
 <summary><strong>Advanced options</strong></summary>

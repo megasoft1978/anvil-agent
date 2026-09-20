@@ -10,7 +10,7 @@ earlier text, only as a defensible replacement built from the same goals.
 Benchmarking a coding model on "real" bugs is worthless if the model may have seen the bug (or
 its fix) during training, and worthless again if the "bug" is itself AI-generated rather than a
 real defect a human found and fixed. This document is the checklist a candidate fixture must pass
-before it's used to measure the current Qwen3.6-35B-A3B target against Sonnet 5.
+before it is used in a contamination-sensitive comparison against the active local target.
 
 ## Date boundary
 
@@ -20,13 +20,9 @@ A bug is eligible only if its fix was merged **after** a computed boundary date:
 D = max(target model's weight publication date, comparison model's release date) + 30 days
 ```
 
-Currently: Qwen3.6-35B-A3B publication date and Sonnet 5's release date, whichever is later, plus
-a 30-day margin (training data cutoffs are rarely the same as release dates, and a margin absorbs
-uncertainty about exactly when a model's pretraining corpus was frozen). Recompute this whenever
-either model changes.
-
-**Current value: D = 2026-07-30** (Qwen3.6-35B-A3B published 2026-04-17; Sonnet 5 released
-2026-06-30, the later date; +30 days). Only PRs merged on or after this date are eligible.
+The frozen first-batch pool uses **D = 2026-07-30**, with a 30-day safety margin after the
+then-current model/release boundary. Keep that date for reproducing the recorded pool; recompute
+it from the active target's publication date before sourcing a new pool.
 
 ## Sourcing method
 
@@ -84,11 +80,11 @@ Two independent measurements, never conflated:
 - **Oracle pass/fail** — mechanical: does `fail_to_pass` flip from failing to passing, do
   `pass_to_pass` tests still pass, after the model's actual edit. This is ground truth for
   "did it work," computed the same way regardless of which model produced the edit.
-- **Quality judging** — Opus 5 grades a transcript (this model's or Sonnet 5's) blind: model
-  identity redacted, tool-call formats normalized so a judge can't infer identity from harness
-  quirks. Isolated single-round scoring first (rubric: hypothesis quality, edit precision,
-  verification discipline, wasted turns); a paired head-to-head round is only worth adding once
-  isolated scores show enough variance to make a comparison meaningful.
+- **Quality judging** — an independently identified evaluator grades a redacted transcript blind:
+  model identity is removed and tool-call formats are normalized so the evaluator cannot infer
+  identity from harness quirks. Isolated single-round scoring comes first (rubric: hypothesis
+  quality, edit precision, verification discipline, wasted turns); a paired head-to-head round is
+  only worth adding once isolated scores show enough variance to make a comparison meaningful.
 
 A fixture that fails the oracle can still be worth keeping for quality judging (e.g. "diagnosed
 correctly, ran out of turns") — the two scores answer different questions and should be reported

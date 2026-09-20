@@ -14,9 +14,8 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const runner = path.join(root, "benchmarks/optimization/runner.mjs");
 const sessionIndex = process.argv.indexOf("--session");
-const session = sessionIndex >= 0 && process.argv[sessionIndex + 1]
-  ? process.argv[sessionIndex + 1]
-  : path.join(root, ".optimization-results/20260915T092827090Z-b401994db269");
+const session = sessionIndex >= 0 && process.argv[sessionIndex + 1] ? process.argv[sessionIndex + 1] : null;
+if (!session) throw new Error("offline-checks requires --session DIR for a freshly prepared session");
 const cli = process.env.OPTIMIZATION_CLI || "/tmp/anvil-agent-opt";
 const config = path.join(root, "benchmarks/optimization/experiments-local-model-screen-qwen3-coder.json");
 
@@ -49,7 +48,7 @@ try {
   assert.match(result.output, /"inference_requested": false/);
   checks.push("validate dry-run without approval");
 
-  result = invoke(["run", "--dry-run", "--session", session, "--cli", cli, "--experiment", "LLAMA-IQ2-8K-REAL"]);
+  result = invoke(["run", "--dry-run", "--session", session, "--cli", cli, "--experiment", "QWEN3-CODER-30B-A3B-LOCAL-QUICK-REAL"]);
   assert.equal(result.status, 0, result.output);
   assert.match(result.output, /"inference_requested": false/);
   checks.push("run dry-run without approval");

@@ -297,7 +297,7 @@ func TestBannedToolClearsAfterOneTurn(t *testing.T) {
 }
 
 // TestUndeclaredToolCallAfterForceEditWindow reproduces a failure observed against a
-// real third-party backend (Mference): once force_edit_window narrows the declared
+// real third-party backend: once force_edit_window narrows the declared
 // tools to edit-only, the backend did not enforce that server-side and the model kept
 // calling read/search anyway for five turns straight, silently defeating the whole
 // anti-stall mechanism. The client must catch this itself rather than trust the server.

@@ -168,7 +168,7 @@ being an `else` branch of the filter check (`} else if (obj instanceof Date) {` 
 function running at all skipped the Date check even when the filter returned an untouched Date.
 
 **This is the first verified repair across this entire multi-day program.** Every prior
-model/engine combination — Qwen3.6, Qwen3.8 (this same base model at IQ3_XXS), Hebrus, Mference,
+model/engine combination — earlier Qwen-family candidates, Qwen3.8 (this same base model at IQ3_XXS), Hebrus, Mference,
 and Bonsai 2 itself at `xhigh` — either failed on infrastructure before a real attempt or
 produced a confidently-wrong fix. The reasoning-effort setting, not the model or the
 quantization, was the blocker on `xhigh`. Remaining fixtures are being re-run at `medium` for a

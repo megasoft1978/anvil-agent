@@ -23,7 +23,16 @@ function size(pathname) {
 
 function configuredModels() {
   const models = new Map();
-  for (const name of ["experiments-local-model-screen-qwen3-coder.json", "experiments-turboquant.json", "experiments-llama-qwen36.json", "experiments.json"]) {
+  for (const name of [
+    "experiments-local-model-screen-qwen3-coder.json",
+    "experiments-local-model-screen-qwen36-27b-coder.json",
+    "experiments-bonsai2-local.json",
+    "experiments-local-model-screen-gemma4.json",
+    "experiments-local-model-screen-qwen35-4b.json",
+    "experiments-local-model-screen-granite4.2-3b.json",
+    "experiments-local-model-screen-ministral3-14b.json",
+    "experiments-local-model-screen-ministral3-8b.json",
+  ]) {
     const file = path.join(HERE, name);
     if (!existsSync(file)) continue;
     try {

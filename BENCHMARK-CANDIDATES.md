@@ -3,8 +3,9 @@
 Tracked against the methodology in `BENCHMARK-SOURCING.md` (boundary D = 2026-07-30). Sourced via
 `gh search prs --repo=<repo> --merged --merged-at ">=2026-07-30" --json ...`. Each entry records
 the checklist evidence gathered so far; a candidate is only promoted to an actual fixture
-(`manifest.json` entry with `fail_to_pass`/`pass_to_pass`) after the contamination probe (title
-only, no body) is run against Qwen3.6-35B-A3B and it fails to name the fix.
+(`manifest.json` entry with `fail_to_pass`/`pass_to_pass`) after a title-only contamination probe
+against the active target fails to name the fix. The original target-specific probe transcripts
+are intentionally not part of this current record.
 
 ## colinhacks/zod (real, ~35k+ stars, dependency-light, fast test suite)
 
@@ -23,11 +24,6 @@ only, no body) is run against Qwen3.6-35B-A3B and it fails to name the fix.
   fix author) pass, 5 (real test diff) pass, 6 (diff size) pass, 7 (repo popularity) pass. Not yet
   done: 8/9 (standalone reproduction re-verified against the pre-fix commit), 10 (no concurrent
   dependency), 12 (tier locked before any run) — tier T2 assigned now, before any live test.
-- **Contamination probe (2026-09-12):** PASS. Given only the title, Qwen3.6-35B-A3B guessed
-  "order-dependent state mutation... `.int()` resets or overwrites the check array" — plausible
-  generic reasoning about how such a bug class works, but does not name the real file
-  (`checks.ts`) or the real mechanism (a format-check step overwriting tighter min/max bounds
-  during JSON Schema conversion). No memorization signal.
 - **FIXTURE BUILT AND VERIFIED (2026-09-12).** base_commit=`e7604717801fe5cc17c525fb92abe0abeae0ae6e`,
   fix_commit(merge)=`7a00236683c79000dbab0d92f6faf0b7fba39f59`. Reproduced against the real repo:
   the 2 oracle tests (`bigint.test.ts`, `to-json-schema.test.ts`) fail on base (exactly 2 of 330,
@@ -68,11 +64,6 @@ only, no body) is run against Qwen3.6-35B-A3B and it fails to name the fix.
   33s instead of several minutes, 338MB instead of 1.1GB. This is fixture-local (the copied
   worktree only), not a change to the real zod repo or to anything committed here beyond
   `pilot/manifest.json`.
-- **Contamination probe (2026-09-12):** PASS. Given only the title, Qwen3.6-35B-A3B guessed
-  "closure-based memoization retaining references to large input objects... closures hold
-  references preventing garbage collection" — plausible generic reasoning about memoizer leaks in
-  general, but does not name the real file (`memoizer.ts`) or the real mechanism (a finished parse
-  staying pinned rather than being released). No memorization signal.
 
 ### Candidate 3 — PR #6582, issue #6577 — tier T3
 
@@ -88,10 +79,6 @@ only, no body) is run against Qwen3.6-35B-A3B and it fails to name the fix.
 - **Checklist status:** 1/2/3/4/5/7 pass; 6 (diff size) borderline — real source diff is ~63
   lines across 2 files, at the edge of the informal ceiling but multi-file scope is exactly what
   T3 is for. 8/9/10/12 not yet verified.
-- **Contamination probe (2026-09-12):** PASS. Given only the title, Qwen3.6-35B-A3B explained
-  discriminated-union mechanics generically (how `z.discriminatedUnion()` picks a branch) without
-  reaching a specific claim about `compile.ts`/`schemas.ts` or the real fix mechanism in the
-  visible output. No memorization signal.
 - **FIXTURE BUILT AND VERIFIED (2026-09-12).** base_commit=`1c51cbe0fe23d09f8d520b31487d50a01588fae5`,
   fix_commit(merge)=`b12aa523e7e2617c4296cccf9b24d6558ed23e95`. Task key
   `zod-discriminated-union-defaulted-tags`. 6 oracle tests fail on base (6/76), all pass after the
@@ -112,9 +99,6 @@ only, no body) is run against Qwen3.6-35B-A3B and it fails to name the fix.
   `__tests__/base.js` (+17/-0). Small, single-file, exactly T1 scope.
 - **Checklist status:** 1/4/5/6/7 pass; 2/3 pass with the caveat above (no separate issue, must
   extract symptom-only text from the PR body); 8/9/10/12 not yet verified.
-- **Contamination probe (2026-09-12):** PASS. Given only the title, Qwen3.6-35B-A3B described a
-  generic "arrays vs. objects" key-handling confusion without naming `arrayMethods.ts` or the real
-  fix (keying inserted indices by position instead of by name). No memorization signal.
 - **FIXTURE REBUILT AND VERIFIED (2026-09-12), under `go-agent/pilot/` this time** — the original
   claim below (this entry, written in an earlier session) pointed at
   `llm-memory-wall-research/results/EXP-086/`, which doesn't exist on this machine; rebuilt from
@@ -142,10 +126,6 @@ only, no body) is run against Qwen3.6-35B-A3B and it fails to name the fix.
   `src/utils/common.ts` (+11/-7); test oracle in `__tests__/base.js` and `__tests__/map-set.js`.
 - **Checklist status:** 1/4/5/6/7 pass; 2/3 pass with the same no-separate-issue caveat as
   Candidate 4; 8/9/10/12 not yet verified.
-- **Contamination probe (2026-09-12):** PASS. Given only the title, Qwen3.6-35B-A3B correctly
-  explained what structural sharing means in general (accurate background knowledge of Immer) but
-  did not name `arrayMethods.ts`/`common.ts` or cite the actual referential-equality check that was
-  missing. No memorization signal.
 - **FIXTURE BUILT AND VERIFIED (2026-09-12).** base_commit=`e3df956dca6f62c9053ab750b2c8b8a518f3e001`
   (= candidate 4's fix_commit — the two build on each other in immer's real history),
   fix_commit(merge)=`907395ad21aef22ed2c71d11f4fb4172683ab62a`. Task key
@@ -165,17 +145,6 @@ only, no body) is run against Qwen3.6-35B-A3B and it fails to name the fix.
 - **Diff:** source fix confined to `lib/stringify.js` (+3/-3); test oracle in `test/stringify.js`
   (+60/-0). Small, single-file, clean T1.
 - **Checklist status:** 1/2/3/4/5/6/7 all pass cleanly, no caveats. 8/9/10/12 not yet verified.
-- **Contamination probe (2026-09-12): BORDERLINE PASS, flagged for extra scrutiny.** Given only
-  the title, Qwen3.6-35B-A3B said "the `filter` option is applied before the internal serialization
-  logic can detect special types like `Date`... if `filter` doesn't explicitly preserve the
-  special-case handling" — directionally close to the real fix (the Date-serialization branch was
-  unreachable specifically when a filter was provided). It still doesn't name the actual file
-  (`lib/stringify.js`) or the exact real mechanism (checking the filter's *result* for `Date`
-  rather than skipping the check when a filter exists), and "filter interferes with special-case
-  type handling" is a fairly generic guess for this well-known bug *category* in serialization
-  libraries generally — but this is the closest of the 6 candidates and deserves a second look
-  (e.g. an independent re-probe with different phrasing) before being fully trusted, rather than
-  being treated as cleanly equivalent to the other 5.
 - **FIXTURE BUILT AND VERIFIED (2026-09-13).** base_commit=`8859c37470e11b42b547b275e4e9bd0bc8cc5464`,
   fix_commit=`62fd25480b0b0d9c0a667ee67e13608a363f5d0e`. Task key `qs-stringify-date-filter`. 6
   oracle tests fail on base (6/446), all pass after the real fix, 0 regressions. **TAP support,
@@ -197,11 +166,12 @@ problem this methodology exists to prevent (measuring one model's output against
 prior fix). zustand is excluded from sourcing entirely for this window as a result, not just these
 two PRs — worth spot-checking any repo's recent PR authors before investing time reading further.
 
-## Status: 6 candidates found, spanning all 3 tiers (2 each) — all 6 passed the contamination probe
+## Status: 6 candidates found, spanning all 3 tiers (2 each)
 
-Sourcing and the contamination probe are both done for this first batch (2026-09-12). One
-candidate (#6, qs) is a borderline pass and worth a second independent probe before fully trusting
-it; the other 5 are clean.
+Sourcing and fixture construction for this first batch (2026-09-12/13) are complete. The six
+fixtures are mechanically verified under `go-agent/pilot/`; any new contamination-sensitive
+comparison must rerun the title-only probe against the active target before treating the pool as
+fresh evidence.
 
 **Important repo-runner split, discovered while building the first fixture:** qs uses `tape`
 (TAP output), incompatible with the harness's JSON-report-based grading (built for vitest/jest).

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// Decision-grade local runner for the Qwen optimization handoff.
+// Decision-grade local runner for the local model screen.
 //
 // The runner owns orchestration, fixture materialization, host verification, memory sampling,
 // result persistence, and resumption. The Go binary remains the only model-facing agent loop:
@@ -50,8 +50,7 @@ const DEFAULT_MAX_SERVER_FOOTPRINT_BYTES = 3 * 1024 ** 3;
 const execFileAsync = promisify(execFile);
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, "../..");
-// The closed TurboQuant and historical Qwen3.6 studies remain selectable with --experiments,
-// but new preparation sessions default to the verified current Qwen3-Coder winner.
+// New preparation sessions default to the verified current Qwen3-Coder winner.
 const DEFAULT_EXPERIMENTS = path.join(HERE, "experiments-local-model-screen-qwen3-coder.json");
 const DEFAULT_CONTRACT = path.join(HERE, "fixture-contract.json");
 const DEFAULT_PILOT = path.join(REPO_ROOT, "go-agent/pilot");
@@ -2313,7 +2312,7 @@ async function main() {
   else if (subcommand === "summarize") await summarize(args);
   else if (subcommand === "status") await status(args);
   else {
-    console.log(`Usage:\n  node benchmarks/optimization/runner.mjs prepare [--cli /tmp/anvil-agent]\n  node benchmarks/optimization/runner.mjs validate --session DIR [--fetch-reference] [--dry-run]\n  node benchmarks/optimization/runner.mjs run --session DIR --cli /tmp/anvil-agent --experiment LLAMA-IQ2-8K-REAL [--start-server | --external-server --server-pid PID] [--dry-run]\n  node benchmarks/optimization/runner.mjs summarize --session DIR\n  node benchmarks/optimization/runner.mjs status --session DIR`);
+    console.log(`Usage:\n  node benchmarks/optimization/runner.mjs prepare [--cli /tmp/anvil-agent]\n  node benchmarks/optimization/runner.mjs validate --session DIR [--fetch-reference] [--dry-run]\n  node benchmarks/optimization/runner.mjs run --session DIR --cli /tmp/anvil-agent --experiment QWEN3-CODER-30B-A3B-LOCAL-QUICK-REAL [--start-server | --external-server --server-pid PID] [--dry-run]\n  node benchmarks/optimization/runner.mjs summarize --session DIR\n  node benchmarks/optimization/runner.mjs status --session DIR`);
   }
 }
 

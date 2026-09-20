@@ -223,40 +223,6 @@ var modelProfiles = []modelProfile{
 		seed:            42,
 	},
 	{
-		// Qwen3.6-35B-A3B's own documented instruct/non-thinking-mode recommendation, not
-		// greedy decoding: the model card explicitly warns greedy decoding can cause the
-		// exact "endless repetition" failure this harness spent real effort building
-		// structural workarounds for (the ledger, read-dedup, the per-turn tool ban). A
-		// fixed seed keeps runs reproducible for the regression suite despite non-zero
-		// temperature.
-		name:            "qwen36-35b-a3b",
-		promptProfile:   "baseline",
-		temperature:     0.7,
-		topP:            0.8,
-		topK:            20,
-		presencePenalty: 1.5,
-		repeatPenalty:   1.0,
-		seed:            42,
-	},
-	{
-		// Qwen3.6-35B-A3B's own documented THINKING-mode recommendation for precise coding
-		// tasks specifically (huggingface.co/Qwen/Qwen3.6-35B-A3B, "Thinking Mode - Precise
-		// Coding Tasks"), distinct from both its general-tasks thinking profile (temp 1.0,
-		// presence_penalty 1.5) and the instruct/non-thinking profile above. Requires the
-		// server started WITHOUT --reasoning off (thinking is this model's default mode).
-		// Exists to A/B against the non-thinking default: a live agentic run
-		// found the non-thinking model exploring a real repo for minutes without ever
-		// committing to an edit, which thinking mode may or may not fix.
-		name:            "qwen36-35b-a3b-thinking",
-		promptProfile:   "baseline",
-		temperature:     0.6,
-		topP:            0.95,
-		topK:            20,
-		presencePenalty: 0.0,
-		repeatPenalty:   1.0,
-		seed:            42,
-	},
-	{
 		// Ternary Bonsai 2 27B (PrismML, 2026-09-17), a ternary quant of Qwen3.8-27B.
 		// Every published benchmark number for this model (whitepaper Section 4, Appendix B)
 		// is thinking mode at reasoning effort xhigh, sampled per the whitepaper's stated
