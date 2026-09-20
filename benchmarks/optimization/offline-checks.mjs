@@ -18,7 +18,7 @@ const session = sessionIndex >= 0 && process.argv[sessionIndex + 1]
   ? process.argv[sessionIndex + 1]
   : path.join(root, ".optimization-results/20260915T092827090Z-b401994db269");
 const cli = process.env.OPTIMIZATION_CLI || "/tmp/anvil-agent-opt";
-const config = path.join(root, "benchmarks/optimization/experiments-llama-qwen36.json");
+const config = path.join(root, "benchmarks/optimization/experiments-local-model-screen-qwen3-coder.json");
 
 function cleanEnvironment() {
   const env = { ...process.env };

@@ -85,7 +85,7 @@ func TestLiveModel(t *testing.T) {
 	}
 	model := os.Getenv("ANVIL_LIVE_MODEL")
 	if model == "" {
-		model = "qwen36-35b-a3b"
+		model = "qwen3-coder-30b-a3b"
 	}
 	timeout := os.Getenv("ANVIL_LIVE_TIMEOUT")
 	if timeout == "" {

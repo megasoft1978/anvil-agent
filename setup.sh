@@ -27,7 +27,7 @@ set -euo pipefail
 # /bin/bash itself, so there is no source file to read.
 usage() {
   cat << 'EOF'
-anvil-agent -- Qwen3.6-35B-A3B as a local coding assistant on a 16GB Apple Silicon Mac.
+anvil-agent -- Qwen3-Coder-30B-A3B as a local coding assistant on a 16GB Apple Silicon Mac.
 
   curl -fsSL https://raw.githubusercontent.com/megasoft1978/anvil-agent/main/setup.sh | bash
 
@@ -78,31 +78,30 @@ done
 # literal that also appears above it. SERVER_FLAGS is a bash array (not a string) so it can be checked
 # element-by-element (doctor's flag-drift check) and hashed as a whole (config_sig).
 # ============================================================================================================
-KIT_VERSION="2026.09.15"
+KIT_VERSION="2026.09.20"
 KIT_DIR="$HOME/.anvil-agent"
 MODEL_DIR="$KIT_DIR/models"
 PORT=8114
-MODEL_REPO="unsloth/Qwen3.6-35B-A3B-GGUF"
-MODEL_FILE="Qwen3.6-35B-A3B-UD-IQ2_M.gguf"
-MODEL_BYTES=11522702304
-MODEL_MIN_FREE_GB=12   # model size plus headroom, checked before downloading
-MODEL_ID="qwen36-35b-a3b"
-CTX=24576
-MAX_TOKENS=3072
-# Validated Qwen3.6-35B-A3B configuration: keep `--ctx-checkpoints 0 --cache-ram 0` disabled.
-# On this model those flags periodically discard the entire prompt-prefix cache instead of extending it
-# incrementally. With them removed, a 16-turn agentic run kept `timings.cache_n` growing monotonically and
-# completed in 245s instead of reaching only 11-12 turns in a 300s budget. The tradeoff is higher server RSS
-# (~11.2GB rather than ~8.8GB on the validation machine), which still fits the shipped 16GB target.
-SERVER_FLAGS=(-ngl 99 -fa on -c "$CTX" --no-warmup -np 1 --spec-type ngram-simple --reasoning off -ub 256 -b 256)
+MODEL_REPO="unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF"
+MODEL_FILE="Qwen3-Coder-30B-A3B-Instruct-Q2_K.gguf"
+MODEL_BYTES=11258612896
+MODEL_MIN_FREE_GB=13   # model size plus headroom, checked before downloading
+MODEL_ID="qwen3-coder-30b-a3b"
+CTX=8192
+MAX_TOKENS=8192
+# Validated Qwen3-Coder-30B-A3B configuration: low reasoning preserves the model's useful planning
+# without allowing an unbounded thinking loop. Native Jinja/offline mode and Q8 KV cache match the
+# winning real-repository screen; speculative decoding is disabled because no validated draft model is
+# shipped with this kit.
+SERVER_FLAGS=(-ngl 99 -fa on -c "$CTX" --no-warmup -np 1 --reasoning on --reasoning-effort low --jinja --offline -ub 256 -b 256 --spec-type none --cache-type-k q8_0 --cache-type-v q8_0 --slot-save-path "$KIT_DIR/slots/$MODEL_ID")
 # Fetched by --check ONLY as a staleness beacon -- never sourced or executed, and never supplies a value this
 # script acts on (every constant above is still what actually runs). A compromised or lagging beacon can tell
 # you you're behind; it cannot change what your machine does.
 VERSION_URL="https://raw.githubusercontent.com/megasoft1978/anvil-agent/main/VERSION"
 # Substrings doctor checks for in the running server's own command line -- kept separate from SERVER_FLAGS
-# because some flags take a value (`-c 24576`) and checking that as one substring is more reliable than
-# checking `-c` and `24576` independently, which could each appear for unrelated reasons.
-CHECK_STRINGS=("-c $CTX" "-ngl 99" "-fa on" "-np 1" "--no-warmup" "--spec-type ngram-simple" "--reasoning off")
+# because some flags take a value (`-c 8192`) and checking that as one substring is more reliable than
+# checking `-c` and `8192` independently, which could each appear for unrelated reasons.
+CHECK_STRINGS=("-c $CTX" "-ngl 99" "-fa on" "-np 1" "--no-warmup" "--reasoning on" "--reasoning-effort low" "--jinja" "--offline" "--spec-type none" "--cache-type-k q8_0" "--cache-type-v q8_0")
 
 DEST="$MODEL_DIR/$MODEL_FILE"
 INSTALL_ENV="$KIT_DIR/install.env"
@@ -180,7 +179,7 @@ hw_gate() {
   fi
   if [ "$MEM_GB" -lt 15 ]; then
     echo "This kit needs 16GB of unified memory. Detected: ~${MEM_GB}GB." >&2
-    echo "The model alone needs ~10GB resident; 8GB and 12GB Macs cannot run it at usable quality." >&2
+    echo "The model alone needs ~9GB resident; 8GB and 12GB Macs cannot run it at usable quality." >&2
     return 1
   fi
   return 0
@@ -235,14 +234,14 @@ smoke_test() {  # prints the raw response body; does not fail the script on a ba
     || true
 }
 
-check_smoke() {  # prints ok/empty-reasoning/failed; takes the smoke_test() body on stdin
+check_smoke() {  # prints ok/reasoning/failed; takes the smoke_test() body on stdin
   local body; body=$(cat)
   if [ -z "$body" ] || ! printf '%s' "$body" | grep -qi '"content"'; then
     echo "failed:$body"
     return 1
   fi
   if printf '%s' "$body" | grep -q '"reasoning_content":"[^"]'; then
-    echo "empty-reasoning"
+    echo "reasoning"
     return 0
   fi
   echo "ok"
@@ -293,7 +292,7 @@ step_download() {
   local free; free=$(free_disk_gb "$MODEL_DIR")
   if [ -n "$free" ] && [ "$free" -lt "$MODEL_MIN_FREE_GB" ]; then
     echo "Only ${free}GB free on the volume holding $MODEL_DIR; need at least ${MODEL_MIN_FREE_GB}GB for the model." >&2
-    echo "Free up space first -- a 9.3GB download failing at 99% after 40 minutes is worse than refusing now." >&2
+    echo "Free up space first -- an 11.3GB download failing at 99% after 40 minutes is worse than refusing now." >&2
     exit 1
   fi
 
@@ -324,9 +323,9 @@ step_download() {
     if [ "$partial_bytes" -gt 0 ]; then
       echo "Resuming an interrupted download ($partial_bytes of $MODEL_BYTES bytes already on disk)..."
     else
-      echo "Downloading $MODEL_FILE (~9.3GB, this takes a while)..."
+      echo "Downloading $MODEL_FILE (~11.3GB, this takes a while)..."
     fi
-    # -C - resumes from whatever is already in the .partial file; a 9.3GB download that dies at 80% should
+    # -C - resumes from whatever is already in the .partial file; an 11.3GB download that dies at 80% should
     # cost 20% to finish, not 100%. Hugging Face serves byte ranges, which is what makes this work.
     curl -fL -C - --progress-bar -o "$DEST.partial" "$url"
   fi
@@ -377,9 +376,8 @@ step_server() {  # $1: "reuse" (default) or "restart" -- restart is what --upgra
     echo "Server is up but a real request failed. Response: $smoke" >&2
     exit 1
   }
-  if [ "$verdict" = "empty-reasoning" ]; then
-    echo "Warning: the server is emitting a non-empty reasoning channel. Thinking mode was measured this" >&2
-    echo "session to never converge on coding tasks for this model -- --reasoning off should prevent it." >&2
+  if [ "$verdict" = "reasoning" ]; then
+    echo "Smoke completion included a reasoning channel, as expected for --reasoning on --reasoning-effort low."
   fi
   echo "Server ready on port $PORT."
 }
@@ -455,7 +453,7 @@ doctor() {
   [ -d "$probe" ] || probe="$HOME"
   local free; free=$(free_disk_gb "$probe")
   if [ -n "$free" ] && [ "$free" -ge "$MODEL_MIN_FREE_GB" ]; then
-    tag ok "free disk on $MODEL_DIR: ${free}GB (model needs ~10GB)"
+    tag ok "free disk on $MODEL_DIR: ${free}GB (model needs ~11.3GB plus headroom)"
   else
     tag warn "free disk on $MODEL_DIR: ${free:-unknown}GB -- may not be enough for a fresh/re- download"
   fi
@@ -500,7 +498,7 @@ doctor() {
       local verdict; verdict=$(printf '%s' "$smoke" | check_smoke) || verdict="failed"
       case "$verdict" in
         ok) tag ok "real completion succeeded in $((t1-t0))s" ;;
-        empty-reasoning) tag fail "reasoning channel is non-empty -- thinking mode never converges on this model" ;;
+        reasoning) tag ok "real completion succeeded in $((t1-t0))s (low-effort reasoning channel present)" ;;
         *) tag fail "a real completion request failed: ${smoke:0:200}" ;;
       esac
       local cmd; cmd=$(ps -o command= -p "$pid" 2>/dev/null || true)

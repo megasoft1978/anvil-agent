@@ -16,8 +16,10 @@ The [Go agent harness](go-agent/README.md) is what actually reads and edits agai
 a small read/edit loop with configurable deadlines and JSONL traces. See its
 [offline verification results](go-agent/TESTING.md) for what's been checked so far.
 
-This project is currently tuned for Qwen3.6-35B-A3B (see `go-agent/profiles.go`): its sampling defaults and
-server flags are kept together so the shipped configuration stays reproducible.
+This project is currently tuned for the verified local winner, Qwen3-Coder-30B-A3B Q2_K (see
+`go-agent/profiles.go`): its sampling defaults and server flags are kept together so the shipped
+configuration stays reproducible. The fresh-install script uses the same 8K-context, low-reasoning
+configuration that passed the strongest local repair screen.
 
 ## Benchmarks
 
@@ -29,7 +31,7 @@ optimization plan reports these separately.
 
 | Model | Bugs fixed | Notes |
 |---|---|---|
-| **Qwen3.6-35B-A3B-UD-IQ2_M** (local, this repo's shipped config — see `go-agent/profiles.go`; real `go-agent` binary, Read/Edit tools, no test feedback, 16-turn cap, n=1) | 20/44 (45%) | 7 of 9 scenarios hit the 16-turn cap without finishing (1 of those, `notify-channel`, never made a single edit); only 2 of 9 reached `"completed"` on their own |
+| **Qwen3.6-35B-A3B-UD-IQ2_M** (historical local configuration, no longer shipped — real `go-agent` binary, Read/Edit tools, no test feedback, 16-turn cap, n=1) | 20/44 (45%) | 7 of 9 scenarios hit the 16-turn cap without finishing (1 of those, `notify-channel`, never made a single edit); only 2 of 9 reached `"completed"` on their own |
 | **claude-sonnet-5** (agentic, Claude Code, 2026-09-13) | 41/44 (93%) | avg ~77s wall-clock / ~61k tokens per scenario |
 | **claude-opus-5** (agentic, Claude Code, 2026-09-13) | 43/44 (98%) | avg ~34s wall-clock / ~50k tokens per scenario |
 
@@ -69,8 +71,8 @@ ledger, including excluded models and immutable artifact identities, is in the
 | **Gemma 4 26B A4B** | 10.015 GB | Gates passed; scored repair pending | — | — | ~10.1 GiB / 57–61 MB |
 
 The current practical baseline is Qwen3-Coder 30B A3B: it is the fastest model
-with multiple verified repairs, while Qwen3.6 has now demonstrated a complete
-multi-file repair but at substantially higher latency. There are eight actual
+with multiple verified repairs. The separate Qwen3.6-27B comparison also demonstrated
+a complete multi-file repair, but at substantially higher latency. There are eight actual
 GGUF weights remaining, totaling 55,960,893,536 bytes (52.118 GiB).
 
 **Code-quality verdict, judged by Opus 5 itself** (given both models' diffs for 3 of the 9 scenarios,
@@ -81,7 +83,7 @@ socket `send()` call that Sonnet left able to throw mid-reconnect. Sonnet's code
 function to no longer actually drain anything, a naming/behavior mismatch Opus avoided. Opus's fixes did
 carry some real scope creep (exponential backoff, a monotonic clock helper) beyond what was asked.
 
-**Is the 45% score just the 2-bit quantization?** Partly, but this isn't a clean isolation — Qwen3.6-35B-A3B
+**Was the historical 45% score just the 2-bit quantization?** Partly, but this isn't a clean isolation — Qwen3.6-35B-A3B
 run here is both a much smaller model (3B active params per token, MoE) *and* quantized to ~2.5 bits/weight
 (IQ2_M), versus Sonnet/Opus at full precision and far larger scale. 2-bit-class quantization is well-
 documented to cause real, measurable quality loss on its own — so it's a plausible contributor to the gap —
@@ -103,7 +105,7 @@ curl -fsSL <raw-url>/uninstall.sh | bash                      # remove everythin
 `--doctor` is the first thing to run if something's wrong. `setup.sh --help` and `uninstall.sh --help` list
 every other flag.
 
-**Requirements:** Apple Silicon Mac (M1/M2/M3/M4), 16GB unified memory or more, ~12GB free disk, and
+**Requirements:** Apple Silicon Mac (M1/M2/M3/M4), 16GB unified memory or more, ~13GB free disk, and
 [Homebrew](https://brew.sh) + [Node.js](https://nodejs.org) if you don't already have them. Building go-agent
 also needs [Go](https://go.dev). Rather not pipe a script into `bash`? Read `setup.sh` first — one
 self-contained file, every command visible.

@@ -1,5 +1,5 @@
-KIT_VERSION=2026.09.15
-CONFIG_SIG=8cb9a6e2e78bacce
-MODEL_FILE=Qwen3.6-35B-A3B-UD-IQ2_M.gguf
-MODEL_BYTES=11522702304
-NOTES=Qwen3.6-35B-A3B is the current target model. See setup.sh's SERVER_FLAGS comment for sampling and cache-flag rationale specific to this model; go-agent is the controlled coding harness.
+KIT_VERSION=2026.09.20
+CONFIG_SIG=d8f534bcb15db2c0
+MODEL_FILE=Qwen3-Coder-30B-A3B-Instruct-Q2_K.gguf
+MODEL_BYTES=11258612896
+NOTES=Qwen3-Coder-30B-A3B is the current target model. See setup.sh's SERVER_FLAGS comment for the validated low-reasoning, native-template, and cache configuration; go-agent is the controlled coding harness.

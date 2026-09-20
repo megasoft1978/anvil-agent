@@ -1,4 +1,4 @@
-# Qwen optimization runner
+# Local model optimization runner
 
 The [algorithm experiment guide](../../docs/OPTIMIZATION-ALGORITHM-EXPERIMENTS.md) adds a separate
 Gemma matrix for ngram-simple, Q8 KV, bounded read/search output, prompt style and stall recovery.
@@ -12,8 +12,10 @@ This directory contains the preparation and execution harness for Deliverable 0 
 compiled Go CLI against a fresh worktree, so the model selects and executes native `read`, `search`,
 `edit`, and `write` calls. Host verification runs in a separate copy after the CLI exits.
 
-The default configuration is the existing local Qwen3.6 GGUF through pinned `llama.cpp` in
-`experiments-llama-qwen36.json`. The fastest next fallback is the already available local Gemma 4
+The default configuration is the verified current local winner, Qwen3-Coder-30B-A3B Q2_K, through
+pinned `llama.cpp` in `experiments-local-model-screen-qwen3-coder.json`. The historical Qwen3.6
+configuration remains available explicitly with `--experiments experiments-llama-qwen36.json`.
+The fastest next fallback is the already available local Gemma 4
 attnQ4K GGUF in `experiments-gemma4-local.json`; the smaller-model fallback is prepared in
 `experiments-qwen35-mlx.json`; it uses the installed MLX-LM 0.31.2 OpenAI-compatible server and a
 local Qwen3.5-9B 4-bit Safetensors tree. The closed TurboQuant study remains available explicitly
@@ -39,7 +41,7 @@ CLI=/tmp/anvil-agent-opt
 (cd go-agent && go build -o "$CLI" .)
 node benchmarks/optimization/prepare-holdouts.mjs
 node benchmarks/optimization/prepare-fixtures.mjs
-node benchmarks/optimization/runner.mjs prepare --cli "$CLI" --experiments benchmarks/optimization/experiments-llama-qwen36.json
+node benchmarks/optimization/runner.mjs prepare --cli "$CLI" --experiments benchmarks/optimization/experiments-local-model-screen-qwen3-coder.json
 ```
 
 The local Gemma branch needs no model download. It still requires a fresh session and exact file-hash

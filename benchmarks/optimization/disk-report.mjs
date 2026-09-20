@@ -23,7 +23,7 @@ function size(pathname) {
 
 function configuredModels() {
   const models = new Map();
-  for (const name of ["experiments-turboquant.json", "experiments-llama-qwen36.json", "experiments.json"]) {
+  for (const name of ["experiments-local-model-screen-qwen3-coder.json", "experiments-turboquant.json", "experiments-llama-qwen36.json", "experiments.json"]) {
     const file = path.join(HERE, name);
     if (!existsSync(file)) continue;
     try {

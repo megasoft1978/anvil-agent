@@ -9,8 +9,8 @@ import (
 	"testing"
 )
 
-// TestSamplingDefaults locks in Qwen's own documented sampling recommendation for this
-// model in instruct/coding use, not greedy decoding: the model card explicitly warns
+// TestSamplingDefaults locks in Qwen3-Coder's documented sampling recommendation for
+// instruct/coding use, not greedy decoding: the model card explicitly warns
 // greedy decoding can cause endless repetition, which is the exact failure this harness
 // otherwise fights structurally (the ledger, read-dedup, the per-turn tool ban). A fixed
 // seed keeps runs reproducible for the regression suite despite non-zero temperature.
@@ -29,8 +29,8 @@ func TestSamplingDefaults(t *testing.T) {
 		if request.TopK == nil || *request.TopK != 20 {
 			t.Errorf("top_k %v, want 20", request.TopK)
 		}
-		if request.PresencePenalty == nil || *request.PresencePenalty != 1.5 {
-			t.Errorf("presence_penalty %v, want 1.5", request.PresencePenalty)
+		if request.PresencePenalty == nil || *request.PresencePenalty != 1.0 {
+			t.Errorf("presence_penalty %v, want 1.0", request.PresencePenalty)
 		}
 		if request.RepeatPenalty == nil || *request.RepeatPenalty != 1.0 {
 			t.Errorf("repeat_penalty %v, want 1.0", request.RepeatPenalty)

@@ -50,9 +50,9 @@ const DEFAULT_MAX_SERVER_FOOTPRINT_BYTES = 3 * 1024 ** 3;
 const execFileAsync = promisify(execFile);
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, "../..");
-// The closed TurboQuant study remains selectable with --experiments, but new preparation
-// sessions must follow the current no-download Qwen3.6/llama.cpp path from the handoff.
-const DEFAULT_EXPERIMENTS = path.join(HERE, "experiments-llama-qwen36.json");
+// The closed TurboQuant and historical Qwen3.6 studies remain selectable with --experiments,
+// but new preparation sessions default to the verified current Qwen3-Coder winner.
+const DEFAULT_EXPERIMENTS = path.join(HERE, "experiments-local-model-screen-qwen3-coder.json");
 const DEFAULT_CONTRACT = path.join(HERE, "fixture-contract.json");
 const DEFAULT_PILOT = path.join(REPO_ROOT, "go-agent/pilot");
 const DEFAULT_RESULTS_ROOT = path.join(REPO_ROOT, ".optimization-results");

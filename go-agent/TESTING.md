@@ -1,6 +1,6 @@
 # Testing go-agent
 
-This project targets Qwen3.6-35B-A3B through an already-running local
+This project targets Qwen3-Coder-30B-A3B through an already-running local
 llama-server. The agent loop defaults to repository inspection and edits with
 no shell tool. Verification commands run from Go test code outside the
 model-facing tool surface. Bash is available only when an experiment explicitly
@@ -27,7 +27,7 @@ trusted fixture commands after an agent run. It is not exposed as a model tool.
 
 ## Local model smoke test
 
-Start a healthy Qwen3.6-35B-A3B server with enough free memory, then run:
+Start a healthy Qwen3-Coder-30B-A3B server with enough free memory, then run:
 
 ```sh
 ANVIL_LIVE=1 go test -run '^TestLiveModel$' -v -count=1 -timeout=5m
@@ -40,7 +40,7 @@ returns. It never starts or stops a server it does not own.
 Optional variables:
 
 - `ANVIL_LIVE_ENDPOINT`: loopback OpenAI-compatible endpoint.
-- `ANVIL_LIVE_MODEL`: model ID sent to the server; defaults to `qwen36-35b-a3b`.
+- `ANVIL_LIVE_MODEL`: model ID sent to the server; defaults to `qwen3-coder-30b-a3b`.
 - `ANVIL_LIVE_OUTPUT`: directory for traces.
 - `ANVIL_LIVE_TIMEOUT`: per-stage agent deadline; defaults to `120s`.
 - `ANVIL_LIVE_MAX_TOKENS`: per-request completion limit.

@@ -73,7 +73,7 @@ func cli(parent context.Context, argv []string, stdout, stderr io.Writer) int {
 	tui := flags.Bool("tui", false, "launch the interactive terminal UI instead of one-shot JSON output; silently falls back to headless when stdout is not a terminal")
 	write := flags.Bool("write", true, "allow creating new files with the write tool (create-only; edit still required to modify an existing file)")
 	serverPID := flags.Int("server-pid", 0, "PID of the running llama-server; when set, samples its peak RSS and system-wide peak-wired/min-free memory for the duration of this run (macOS only, 0 disables)")
-	flags.StringVar(&config.Model, "model", "qwen36-35b-a3b", "server model ID; also selects its sampling/prompt profile from profiles.go")
+	flags.StringVar(&config.Model, "model", "qwen3-coder-30b-a3b", "server model ID; also selects its sampling/prompt profile from profiles.go")
 	flags.IntVar(&config.MaxTokens, "max-tokens", 8192, "maximum completion tokens per request")
 	fail := func(err error) int { fmt.Fprintln(stderr, err); return 2 }
 	if err := flags.Parse(argv); err != nil {

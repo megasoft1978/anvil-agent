@@ -95,7 +95,7 @@ On text completion, `completed` means only that the model supplied a final reply
 that a repository test passed. For measured real-repo results, run the trusted verifier separately
 against pristine oracle tests; preserve guided and independent results as different conditions.
 
-Qwen3.6-35B-A3B is expected to emit native tool calls, so the leaked-markup recovery paths are
+Qwen3-Coder-30B-A3B is expected to emit native tool calls, so the leaked-markup recovery paths are
 normally unused. The registry also has a strict Qwen XML recovery path for complete
 `<tool_call><function=...><parameter=...>` output when a server returns the model text instead of a
 `tool_calls` entry. It uses the declared argument schema, rejects narration and malformed/truncated
